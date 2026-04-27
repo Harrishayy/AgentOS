@@ -1,0 +1,28 @@
+# Negative test: enforce mode, allowed_hosts is empty, so any
+# outbound IPv4 connect() should be denied at the LSM layer.
+#
+# Allowed paths use `/` as the prefix so the python interpreter
+# can load its shared libs (the file pillar would otherwise block
+# every libc.so open). The point of *this* manifest is testing
+# the network pillar in isolation.
+name: blocked-net
+command:
+  - python3
+  - -c
+  - |
+    import socket, sys
+    try:
+        socket.create_connection(("1.1.1.1", 80), timeout=3)
+        print("FAIL: connection succeeded; expected kernel deny")
+        sys.exit(1)
+    except OSError as e:
+        # EPERM (1) = LSM denied. We want this.
+        print(f"OK: kernel denied connect() with errno={e.errno} ({e.strerror})")
+        sys.exit(0 if e.errno in (1, 13) else 2)
+mode: enforce
+allowed_hosts: []          # nothing — every connect should be denied
+allowed_paths:
+  - /                      # let python3 load libs (file pillar not under test)
+allowed_bins:
+  - /usr/bin/python3
+forbidden_caps: []

@@ -1,0 +1,25 @@
+# Positive test: same enforce mode, but 1.1.1.1 is in allowed_hosts.
+# The same connect() should now succeed (assuming the VM has internet
+# — connect() will succeed even if the HTTP request later times out).
+name: allowed-net
+command:
+  - python3
+  - -c
+  - |
+    import socket, sys
+    try:
+        s = socket.create_connection(("1.1.1.1", 80), timeout=5)
+        s.close()
+        print("OK: connect() succeeded as expected")
+        sys.exit(0)
+    except OSError as e:
+        print(f"FAIL: connect() denied unexpectedly (errno={e.errno})")
+        sys.exit(1)
+mode: enforce
+allowed_hosts:
+  - 1.1.1.1:80
+allowed_paths:
+  - /
+allowed_bins:
+  - /usr/bin/python3
+forbidden_caps: []

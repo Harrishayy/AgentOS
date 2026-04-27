@@ -25,7 +25,12 @@ RestartSec=2
 AmbientCapabilities=CAP_BPF CAP_PERFMON CAP_SYS_ADMIN CAP_NET_ADMIN
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/sys/fs/bpf/agentsandbox /sys/fs/cgroup/agentsandbox /var/log/agentsandbox
+# ReadWritePaths must list paths that already exist before systemd
+# sets up the mount namespace. /sys/fs/bpf/agentsandbox doesn't yet
+# exist on a fresh boot — ExecStartPre would create it, but runs
+# *after* namespacing. So list the parent dirs (which always exist
+# on a kernel with cgroup v2 + bpf fs mounted). See bug B-016.
+ReadWritePaths=/sys/fs/bpf /sys/fs/cgroup /var/log/agentsandbox
 ProtectHome=yes
 PrivateTmp=yes
 LockPersonality=yes

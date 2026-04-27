@@ -8,6 +8,30 @@ For new bugs, copy the template at the bottom of the file.
 
 ---
 
+## B-016 — Service crash-loop on first boot: `ReadWritePaths` named non-existent dir
+**Component:** Systemd unit
+**Symptom:** Browser showed "127.0.0.1:9000 sent back an empty page"
+after a fresh `vagrant up`. Logs:
+`Failed to set up mount namespacing: /sys/fs/bpf/agentsandbox: No
+such file or directory` — the unit was crash-looping (80 restarts
+in a few minutes); something else briefly bound :9000 between
+restarts and answered with an empty TCP reply.
+**Root cause:** Ordering — systemd applies the unit's mount
+namespace (driven by `ProtectSystem=strict` + `ReadWritePaths=`)
+*before* running `ExecStartPre=/bin/mkdir -p /sys/fs/bpf/agentsandbox`.
+On a freshly-booted VM the bind-mount target doesn't exist yet, so
+namespace setup fails with `status=226/NAMESPACE` and the daemon
+never starts. ExecStartPre would have created the dir, but never
+got the chance.
+**Workaround:** Changed `ReadWritePaths` to list *parent* paths
+that always exist on a BPF + cgroup-v2 kernel:
+`/sys/fs/bpf /sys/fs/cgroup /var/log/agentsandbox`. Now namespace
+setup succeeds, ExecStartPre creates the agentsandbox subdirs,
+and the daemon starts cleanly.
+**Status:** Resolved.
+
+---
+
 ## B-015 — Web UI unreachable from host: daemon bound to 127.0.0.1
 **Component:** Daemon, VM provisioning
 **Symptom:** `curl http://127.0.0.1:9000/api/healthz` from the host
