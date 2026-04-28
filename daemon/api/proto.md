@@ -4,11 +4,11 @@ This document is the **source of truth** for the IPC API between the sandbox dae
 
 ## Transport
 
-- **Socket**: Unix domain socket at `/run/agent-sandbox.sock` (root-owned, mode `0600`).
-- **Framing**: 4-byte big-endian length prefix, then UTF-8 JSON. One frame per logical message in either direction.
+- **Socket**: Unix domain socket at `/run/agent-sandbox.sock` (root-owned, mode `0600`). Override path with `AGENT_SANDBOX_SOCKET`. For unprivileged dev runs (no write to `/run`), the daemon falls back to `$XDG_RUNTIME_DIR/agent-sandbox.sock` (mode `0600`, owned by the running user).
+- **Framing**: 4-byte big-endian length prefix, then UTF-8 JSON. One frame per logical message in either direction. Maximum frame size is 16 MiB; oversized frames are rejected with `INTERNAL`.
 - **Connection model**:
-  - One request per connection for the **request/response** methods (RunAgent, StopAgent, ListAgents, AgentLogs, DaemonStatus). The server reads one request frame, writes one response frame, closes.
-  - Persistent for `StreamEvents` — the client sends one request frame, the server writes event frames until either side closes.
+  - One request per connection for the **request/response** methods (RunAgent, StopAgent, ListAgents, AgentLogs, DaemonStatus, IngestEvent). The server reads one request frame, writes one response frame, closes. Clients SHOULD `shutdown(SHUT_WR)` after writing the request frame; the server doesn't require it but it's a cleaner signal.
+  - Persistent for `StreamEvents` — the client sends one request frame, the server writes event frames until either side closes. EOF is the stream terminator; there is no `{"type":"end"}` sentinel. Per-frame server-side write timeout is 1s; a stalled subscriber is dropped, not held.
 - **Errors**: every response is one of:
   ```json
   { "ok": true,  "result": { ... } }
@@ -76,6 +76,41 @@ Persistent connection. Server pushes one `Event` JSON per frame. `agent_id` is o
 { "ok": true, "result": { "version": "string", "uptime_sec": 0, "agent_count": 0 } }
 ```
 
+### `IngestEvent`
+
+Ingest a structured event produced outside the kernel — typically `llm.*` events from the orchestrator (P4). The daemon validates the envelope, stamps it, and fans the event through the same pipeline as kernel events: per-agent log file, slog, every active `StreamEvents` subscriber, and the WebSocket. The CLI's `AgentLogs` returns ingested events alongside kernel-pillar and lifecycle events from the same per-agent log file.
+
+```jsonc
+// request
+{ "method": "IngestEvent",
+  "params": {
+    "agent_id": "agt_xxxx",
+    "event": {
+      "type":    "string",         // MUST be prefixed `llm.` (reserved namespace)
+      "ts":      "RFC3339Nano",    // client-stamped; daemon trusts within a small skew bound
+      "details": { ... }           // opaque to the daemon; the orchestrator (P4) owns the `llm.*` subschema
+    }
+  }
+}
+// response
+{ "ok": true, "result": {} }
+```
+
+Validation:
+
+- `agent_id` must match a registered agent → `AGENT_NOT_FOUND` otherwise.
+- `event.type` MUST be prefixed `llm.` (reserved namespace; prevents collision with kernel pillars `net.*` / `file.*` / `exec` / `creds.*` and lifecycle types `agent.*`) → `INVALID_MANIFEST` otherwise.
+- Peer credentials (`SO_PEERCRED`) must match the daemon's own uid, or the value of `AGENT_SANDBOX_INGEST_UID` if set → `PERMISSION_DENIED` otherwise.
+- `details` is not validated; the daemon round-trips it verbatim.
+
+Stamping:
+
+- Daemon overwrites `agent_id` from `params.agent_id` (clients can't forge it).
+- Daemon adds `cgroup_id` from the registry so subscribers can correlate with kernel events.
+- Daemon trusts the client `ts` in v0.1; clock-skew enforcement is deferred.
+
+Backpressure: non-blocking; a full pipeline buffer drops the event with a warn log, identical to kernel-event handling.
+
 ## Schemas
 
 ### `Manifest`
@@ -127,7 +162,7 @@ Produced by the daemon, consumed by the CLI (via `AgentLogs`/`StreamEvents`) and
 {
   "ts": "2026-04-27T15:04:05.123456789Z",
   "agent_id": "string",
-  "type": "net.connect | net.sendto | file.open | exec | creds.setuid | creds.setgid | creds.capset | agent.started | agent.exited | agent.crashed",
+  "type": "net.connect | net.sendto | file.open | exec | creds.setuid | creds.setgid | creds.capset | agent.stdout | agent.stderr | agent.started | agent.exited | agent.crashed | llm.*",
   "pid": 1234,
   "details": { ... type-specific ... }
 }
@@ -182,6 +217,13 @@ Lifecycle `details`:
   ```jsonc
   { "exit_code": 1, "signal": "SIGSEGV", "duration_sec": 12.3 }
   ```
+- `agent.stdout`, `agent.stderr`:
+  ```jsonc
+  { "line": "...", "truncated": false }
+  ```
+  Daemon captures the agent's stdout/stderr fds via line-buffered scanners. Each line is emitted as one event; lines exceeding 8 KiB are truncated and `truncated: true` is set. These events are intentionally lossy — drop-with-warn on full pipeline buffer, same as kernel events. They exist for UI display and audit. Orchestrators MUST NOT parse them for tool-call detection; use `IngestEvent` for structured `llm.*` events instead.
+
+Ingested `llm.*` events use a P4-owned `details` shape; the daemon round-trips it verbatim. See `IngestEvent` above.
 
 ## Policy schema (BPF maps)
 
@@ -245,4 +287,5 @@ Stable across versions:
 | `CGROUP_FAILED` | cgroup creation or write failed (see message) |
 | `BPF_LOAD_FAILED` | eBPF program load/attach failed (see message) |
 | `LAUNCH_FAILED` | exec.Cmd.Start returned an error |
+| `PERMISSION_DENIED` | peer credentials (`SO_PEERCRED`) do not match the configured ingest principal — currently `IngestEvent` only |
 | `INTERNAL` | catch-all for unexpected errors; message includes details |
