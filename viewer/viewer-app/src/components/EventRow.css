@@ -1,0 +1,71 @@
+/* Shared row styling for both LLMPanel and KernelPanel feeds. */
+
+.event-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 12px;
+  border-left: 3px solid var(--border-strong);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.event-row__time {
+  color: var(--text-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.event-row__badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.event-row__content {
+  color: var(--text);
+  word-break: break-all;
+}
+
+/* LLM types */
+.event-row.type-stdout    { border-left-color: var(--type-stdout); }
+.event-row.type-tool_call { border-left-color: var(--type-tool-call); }
+.event-row.type-stopped   { border-left-color: var(--type-stopped); }
+.event-row.type-crashed   { border-left-color: var(--type-crashed); }
+
+.event-row.type-stdout    .event-row__badge { color: var(--type-stdout); }
+.event-row.type-tool_call .event-row__badge { color: var(--type-tool-call); background: rgba(74, 158, 255, 0.10); }
+.event-row.type-stopped   .event-row__badge { color: var(--type-stopped); background: rgba(60, 215, 132, 0.10); }
+.event-row.type-crashed   .event-row__badge { color: var(--type-crashed); background: rgba(255, 77, 94, 0.12); }
+
+/* Kernel types */
+.event-row.type-connect_attempt { border-left-color: var(--type-attempt); }
+.event-row.type-connect_allowed { border-left-color: var(--type-allowed); }
+.event-row.type-connect_blocked {
+  border-left-color: var(--type-blocked);
+  color: var(--text);
+  font-weight: 600;
+  animation: bgflash 1.5s ease-out 1;
+}
+
+.event-row.type-connect_attempt .event-row__badge { color: var(--type-attempt); }
+.event-row.type-connect_allowed .event-row__badge { color: var(--type-allowed); background: rgba(60, 215, 132, 0.10); }
+.event-row.type-connect_blocked .event-row__badge {
+  color: var(--type-blocked);
+  background: rgba(255, 77, 94, 0.18);
+}
+
+@keyframes bgflash {
+  0%   { background-color: rgba(255, 77, 94, 0.22); }
+  100% { background-color: transparent; }
+}
