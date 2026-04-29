@@ -1,0 +1,6 @@
+name: demo-agent
+command: ["python", "demo_agent.py"]
+allowed_hosts:
+  - llm-proxy.dev.outshift.ai
+  - ducktail-clutch-referee.ngrok-free.app
+allowed_paths: []
