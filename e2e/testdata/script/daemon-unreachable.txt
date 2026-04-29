@@ -1,0 +1,4 @@
+# No mock running → connect fails → exit code 4.
+
+! agentctl daemon status
+stderr 'daemon unreachable'

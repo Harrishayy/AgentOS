@@ -1,0 +1,5 @@
+name: typo-agent
+command: ["/bin/echo", "hi"]
+allowed_hosts: []
+allowed_pots:
+  - /tmp/foo

@@ -1,0 +1,5 @@
+# `agentctl version` prints build metadata.
+
+agentctl version
+stdout 'agentctl '
+stdout 'protocol: v1'

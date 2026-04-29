@@ -1,0 +1,7 @@
+# Intentionally invalid: /33 is wider than IPv4 supports.
+name: bad-cidr
+command: ["/bin/true"]
+allowed_hosts:
+  - 10.0.0.0/33
+allowed_paths: []
+description: "Intentionally invalid: /33 is not a valid IPv4 CIDR mask."

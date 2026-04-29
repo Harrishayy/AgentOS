@@ -1,0 +1,9 @@
+# Intentionally invalid: '**' is rejected by the path-pattern grammar.
+# Use this with `agentctl manifest validate examples/bad-paths.yaml` to see
+# how the CLI surfaces line/column-precise errors.
+name: bad-paths
+command: ["/bin/true"]
+allowed_hosts: []
+allowed_paths:
+  - /srv/**
+description: "Intentionally invalid: ** is not a permitted path pattern."

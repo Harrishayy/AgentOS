@@ -1,0 +1,5 @@
+name: bad-paths
+command: ["/bin/cat", "/srv/data/x"]
+allowed_hosts: []
+allowed_paths:
+  - /foo/**

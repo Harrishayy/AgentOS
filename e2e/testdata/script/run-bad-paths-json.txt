@@ -1,0 +1,15 @@
+# With --json, manifest validation errors render to stdout (so jq-friendly
+# pipelines can consume them). exit 3, no daemon contact.
+
+mockd start
+! agentctl --json run -f manifest.yaml
+stdout '"ok":false'
+stdout '"code":"invalid_path_pattern"'
+! stderr '"ok":false'
+mockd assert-method-called RunAgent 0
+
+-- manifest.yaml --
+name: bad
+command: ["/bin/true"]
+allowed_hosts: []
+allowed_paths: ["/foo/**"]

@@ -1,0 +1,13 @@
+# Typo in `allowed_paths` → did-you-mean suggestion in stderr.
+
+mockd start
+! agentctl run -f manifest.yaml
+stderr 'unknown field "allowed_pots"'
+stderr 'did you mean'
+mockd assert-method-called RunAgent 0
+
+-- manifest.yaml --
+name: typo
+command: ["/bin/true"]
+allowed_hosts: []
+allowed_pots: ["/srv"]

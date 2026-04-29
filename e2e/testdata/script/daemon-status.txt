@@ -1,0 +1,8 @@
+# `agentctl daemon status` round-trips and renders.
+
+mockd start
+agentctl daemon status
+stdout 'protocol: v1'
+stdout 'build: mock-1.0'
+stdout 'agents: 2'
+mockd assert-method-called DaemonStatus

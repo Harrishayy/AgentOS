@@ -1,0 +1,7 @@
+# `agentctl stop X` round-trips and renders summary.
+
+mockd start
+agentctl stop agent-x
+stdout 'Stopped agent-x'
+stdout 'signal=SIGTERM'
+mockd assert-method-called StopAgent

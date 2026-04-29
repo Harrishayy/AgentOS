@@ -1,0 +1,9 @@
+# `agentctl list` renders the table.
+
+mockd start
+agentctl list
+stdout 'NAME'
+stdout 'agent-x'
+stdout 'gone'
+stdout 'exit=0'
+mockd assert-method-called ListAgents

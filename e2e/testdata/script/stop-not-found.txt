@@ -1,0 +1,6 @@
+# Daemon returns AGENT_NOT_FOUND → exit code 6.
+
+mockd start stop_error_code=AGENT_NOT_FOUND stop_error_message='no such agent'
+! agentctl stop ghost
+stderr 'no such agent'
+mockd assert-method-called StopAgent

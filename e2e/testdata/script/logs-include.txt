@@ -1,0 +1,13 @@
+# --include filters categories on the wire (StreamEvents). Requires --follow:
+# AgentLogsRequest carries no Include field, so without --follow we'd silently
+# drop after the daemon shipped everything. Reject up front.
+
+mockd start
+agentctl logs --follow --include lifecycle agent-x &follow&
+mockd push lifecycle exit {"exit_code":0}
+mockd push agent stdout {"line":"should-not-appear"}
+mockd end
+wait follow
+stdout 'lifecycle.exit'
+! stdout 'agent.stdout'
+mockd assert-method-called StreamEvents

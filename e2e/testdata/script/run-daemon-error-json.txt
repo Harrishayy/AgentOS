@@ -1,0 +1,16 @@
+# --json + daemon-side error: JSON envelope on stdout, "Error: ..." not on
+# stderr. Per ASSUMPTIONS.md, --json errors must be jq-pipeable.
+
+mockd start run_error_code=INVALID_MANIFEST run_error_message='daemon rejected manifest'
+! agentctl --json run -f manifest.yaml
+stdout '"ok":false'
+stdout '"code":"INVALID_MANIFEST"'
+stdout 'daemon rejected manifest'
+! stderr 'Error: '
+mockd assert-method-called RunAgent
+
+-- manifest.yaml --
+name: ok
+command: ["/bin/true"]
+allowed_hosts: []
+allowed_paths: []

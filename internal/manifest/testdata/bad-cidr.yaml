@@ -1,0 +1,5 @@
+name: bad-cidr
+command: ["/bin/sh", "-c", "true"]
+allowed_hosts:
+  - 10.0.0.0/33
+allowed_paths: []

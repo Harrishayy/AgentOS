@@ -1,0 +1,12 @@
+# --tail N must be forwarded on the wire as tail_n: the mock honours TailN
+# by trimming to the most recent N events. Catches a regression where the
+# field name diverges from "tail_n".
+
+mockd start
+agentctl logs --tail 2 agent-x
+! stdout 'first'
+! stdout 'second'
+! stdout 'third'
+stdout 'fourth'
+stdout 'lifecycle.exit'
+mockd assert-method-called AgentLogs

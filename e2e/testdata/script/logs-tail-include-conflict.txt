@@ -1,0 +1,7 @@
+# --include without --follow is rejected: AgentLogsRequest has no Include
+# field on the wire (DEC: defer wire change to orchestrator). exit 2.
+
+mockd start
+! agentctl logs --tail 5 --include lifecycle agent-x
+stderr '--include requires --follow'
+mockd assert-method-called AgentLogs 0
