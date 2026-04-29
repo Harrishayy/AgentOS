@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "start:mock": "MOCK_EVENTS=1 node server.js"
+    "start:mock": "MOCK_EVENTS=1 node server.js",
+    "start:full": "SERVE_STATIC=1 node server.js"
   },
   "engines": {
     "node": ">=18"
