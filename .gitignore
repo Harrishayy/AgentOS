@@ -17,6 +17,9 @@ viewer/server/node_modules/
 viewer/viewer-app/node_modules/
 viewer/viewer-app/dist/
 
+# Transfer / release artifacts (git bundles, tarballs, etc.)
+/dist/
+
 # Vendored upstream — Tetragon reference, do not commit
 vendor/tetragon/
 
