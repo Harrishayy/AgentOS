@@ -1,0 +1,63 @@
+/* Red alert banner that slides into the top of the LLM panel when a
+   connect_blocked event arrives. Positioned inside the panel, not the page. */
+
+.alert-banner {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 10px;
+  padding: 10px 12px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 77, 94, 0.22) 0%,
+    rgba(255, 77, 94, 0.10) 100%
+  );
+  border: 1px solid var(--accent-red);
+  border-left: 3px solid var(--accent-red);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text);
+  animation: redslide 260ms ease-out 1;
+}
+
+.alert-banner__icon {
+  font-size: 14px;
+  color: var(--accent-red);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.alert-banner__text {
+  color: var(--text);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.alert-banner__text strong {
+  color: var(--accent-red);
+}
+
+.alert-banner__dismiss {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text-dim);
+  padding: 0 6px;
+  line-height: 1;
+}
+
+.alert-banner__dismiss:hover {
+  color: var(--text);
+}
+
+@keyframes redslide {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

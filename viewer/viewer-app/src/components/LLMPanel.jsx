@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import './Panel.css';
 import './EventRow.css';
+import AlertBanner from './AlertBanner.jsx';
 
 function formatTime(ts) {
   if (!ts && ts !== 0) return '—';
@@ -27,7 +28,7 @@ function renderContent(event) {
   }
 }
 
-export default function LLMPanel({ events }) {
+export default function LLMPanel({ events, alert, injectionTargets, onDismissAlert }) {
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -36,23 +37,39 @@ export default function LLMPanel({ events }) {
     }
   }, [events.length]);
 
+  const targets = injectionTargets || null;
+
   return (
     <section className="panel">
       <header className="panel__header">
         <span className="panel__title">LLM events</span>
         <span className="panel__count">{events.length}</span>
       </header>
+      {alert && (
+        <AlertBanner
+          key={alert.kernelId}
+          hostname={alert.hostname}
+          reason={alert.reason}
+          onDismiss={onDismissAlert}
+        />
+      )}
       <div className="panel__feed">
         {events.length === 0 ? (
           <div className="panel__empty">waiting for LLM events…</div>
         ) : (
-          events.map((event, i) => (
-            <div key={i} className={`event-row type-${event.type}`}>
-              <span className="event-row__time">{formatTime(event.ts)}</span>
-              <span className="event-row__badge">{event.type}</span>
-              <span className="event-row__content">{renderContent(event)}</span>
-            </div>
-          ))
+          events.map((event) => {
+            const isTarget = targets && targets.has(event._id);
+            const cls =
+              `event-row type-${event.type}` +
+              (isTarget ? ' is-injection-target' : '');
+            return (
+              <div key={event._id} className={cls}>
+                <span className="event-row__time">{formatTime(event.ts)}</span>
+                <span className="event-row__badge">{event.type}</span>
+                <span className="event-row__content">{renderContent(event)}</span>
+              </div>
+            );
+          })
         )}
         <div ref={bottomRef} />
       </div>

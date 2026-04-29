@@ -8,22 +8,31 @@ function formatUptime(seconds) {
   return `${m}m ${r.toString().padStart(2, '0')}s`;
 }
 
-export default function StatsRow({ stats }) {
+export default function StatsRow({ stats, blockedPulseKey = 0 }) {
   const { toolCalls = 0, allowed = 0, blocked = 0, uptime = 0 } = stats || {};
   const cards = [
-    { label: 'tool calls', value: toolCalls, tone: 'neutral' },
-    { label: 'connections allowed', value: allowed, tone: 'good' },
-    { label: 'connections blocked', value: blocked, tone: 'bad' },
-    { label: 'uptime', value: formatUptime(uptime), tone: 'neutral' },
+    { id: 'tool',    label: 'tool calls',          value: toolCalls,             tone: 'neutral' },
+    { id: 'allowed', label: 'connections allowed', value: allowed,               tone: 'good'    },
+    { id: 'blocked', label: 'connections blocked', value: blocked,               tone: 'bad'     },
+    { id: 'uptime',  label: 'uptime',              value: formatUptime(uptime),  tone: 'neutral' },
   ];
   return (
     <div className="stats-row">
-      {cards.map((c) => (
-        <div key={c.label} className={`stats-row__card tone-${c.tone}`}>
-          <div className="stats-row__value">{c.value}</div>
-          <div className="stats-row__label">{c.label}</div>
-        </div>
-      ))}
+      {cards.map((c) => {
+        const isPulsing = c.id === 'blocked' && blockedPulseKey > 0;
+        // Remount the bad card when the pulse key changes so the CSS animation
+        // restarts from frame 0 each time the blocked count ticks up.
+        const key = c.id === 'blocked' ? `blocked-${blockedPulseKey}` : c.id;
+        return (
+          <div
+            key={key}
+            className={`stats-row__card tone-${c.tone}${isPulsing ? ' is-pulsing' : ''}`}
+          >
+            <div className="stats-row__value">{c.value}</div>
+            <div className="stats-row__label">{c.label}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }

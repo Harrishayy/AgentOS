@@ -55,7 +55,7 @@
   border-left-color: var(--type-blocked);
   color: var(--text);
   font-weight: 600;
-  animation: bgflash 1.5s ease-out 1;
+  animation: bgflash-strong 1.8s ease-out 1;
 }
 
 .event-row.type-connect_attempt .event-row__badge { color: var(--type-attempt); }
@@ -68,4 +68,28 @@
 @keyframes bgflash {
   0%   { background-color: rgba(255, 77, 94, 0.22); }
   100% { background-color: transparent; }
+}
+
+/* Stronger flash reserved for connect_blocked — deeper red, slightly longer
+   tail, so the row visibly "punches" before the LEFT panel banner appears. */
+@keyframes bgflash-strong {
+  0%   { background-color: rgba(255, 77, 94, 0.45); }
+  20%  { background-color: rgba(255, 77, 94, 0.45); }
+  100% { background-color: transparent; }
+}
+
+/* Marks the LLM tool_call row that the kernel just blocked. Sticks around
+   after the banner dismisses so the attack stays visible in history. */
+.event-row.is-injection-target {
+  border-left-color: var(--accent-red) !important;
+  background-color: rgba(255, 77, 94, 0.08);
+}
+
+.event-row.is-injection-target .event-row__badge {
+  color: var(--accent-red);
+  background: rgba(255, 77, 94, 0.18);
+}
+
+.event-row.is-injection-target .event-row__content {
+  font-weight: 600;
 }

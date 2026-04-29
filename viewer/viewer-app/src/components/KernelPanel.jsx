@@ -45,8 +45,8 @@ export default function KernelPanel({ events }) {
         {events.length === 0 ? (
           <div className="panel__empty">waiting for kernel events…</div>
         ) : (
-          events.map((event, i) => (
-            <div key={i} className={`event-row type-${event.type}`}>
+          events.map((event) => (
+            <div key={event._id} className={`event-row type-${event.type}`}>
               <span className="event-row__time">{formatTime(event.ts)}</span>
               <span className="event-row__badge">{event.type}</span>
               <span className="event-row__content">{renderContent(event)}</span>
