@@ -2,7 +2,20 @@
 bpf/*.bpf.o
 bpf/vmlinux.h
 daemon/agentd
+daemon/test-client
 cli/agentctl/agentctl
+
+# Go binaries built at the repo root by `go build ./cmd/...`
+/agentctl
+
+# Python bytecode caches (generated when running scripts/orchestrator)
+__pycache__/
+*.pyc
+
+# Node.js dependencies and build outputs (viewer)
+viewer/server/node_modules/
+viewer/viewer-app/node_modules/
+viewer/viewer-app/dist/
 
 # Vendored upstream — Tetragon reference, do not commit
 vendor/tetragon/
