@@ -1,0 +1,17 @@
+{
+  "name": "agentsandbox-viewer-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "P5 viewer relay — forwards events from P2/P4 senders to browser viewers over WebSocket",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:mock": "MOCK_EVENTS=1 node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
