@@ -2,11 +2,53 @@ name: ci
 
 on:
   push:
-    branches: [main, "Harrish/*"]
+    branches: [main, "integration/*", "Harrish/*"]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  build-test-lint:
+  cli:
+    name: CLI (P3) — build + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: go vet
+        run: go vet ./cmd/... ./internal/...
+
+      - name: build
+        run: go build ./cmd/... ./internal/...
+
+      - name: unit + e2e tests
+        run: go test ./cmd/... ./internal/... ./e2e/... -timeout 60s -race
+
+      - name: validate example manifests
+        env:
+          ANTHROPIC_API_KEY: dummy-for-validation
+        run: |
+          go build -o ./agentctl ./cmd/agentctl
+          for f in examples/web-fetcher.yaml examples/file-reader.yaml examples/shell-runner.yaml examples/llm-agent.yaml; do
+            ./agentctl manifest validate "$f"
+          done
+          # Negative cases must fail (exit 3).
+          for f in examples/bad-paths.yaml examples/bad-cidr.yaml; do
+            if ./agentctl manifest validate "$f" 2>/dev/null; then
+              echo "expected validation failure for $f" >&2
+              exit 1
+            fi
+          done
+
+  daemon:
+    name: Daemon (P2) — build + test + lint
     runs-on: ubuntu-22.04
     defaults:
       run:
@@ -19,9 +61,9 @@ jobs:
           go-version: "1.22"
           cache: false   # go.sum may not exist on first push; let `go mod tidy` create it.
 
-      # eBPF C compilation lives in the sibling bpf/ directory on Mehul's
-      # branch; this CI does not build .bpf.o files. The daemon loads
-      # them at runtime, so a pure go build/test/lint is enough here.
+      # eBPF C compilation lives in the sibling bpf/ directory; this CI does
+      # not build .bpf.o files. The daemon loads them at runtime, so a pure
+      # Go build/test/lint is enough here.
 
       - name: tidy modules
         run: go mod tidy

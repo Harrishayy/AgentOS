@@ -1,0 +1,4 @@
+# Completion script for zsh is non-empty.
+
+agentctl completion zsh
+stdout '#compdef'

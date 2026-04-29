@@ -1,0 +1,9 @@
+# `agentctl logs X` (no --follow) prints the historical events.
+
+mockd start
+agentctl logs agent-x
+stdout 'agent.stdout'
+stdout 'first'
+stdout 'lifecycle.exit'
+stdout 'exit=0'
+mockd assert-method-called AgentLogs

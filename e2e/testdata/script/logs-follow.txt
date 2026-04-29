@@ -1,0 +1,12 @@
+# `agentctl logs --follow X` opens a stream, then we end it cleanly to make
+# the command return.
+
+mockd start
+agentctl logs --follow agent-x &follow&
+mockd push agent stdout {"line":"first"}
+mockd push agent stdout {"line":"second"}
+mockd end
+wait follow
+stdout 'first'
+stdout 'second'
+mockd assert-method-called StreamEvents

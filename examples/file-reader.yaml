@@ -1,0 +1,7 @@
+# Read a single file, no network. Useful as a baseline for filesystem policy.
+name: file-reader
+command: ["/bin/cat", "/etc/hostname"]
+allowed_hosts: []
+allowed_paths:
+  - /etc/hostname
+description: "Read /etc/hostname. No network, no other paths."

@@ -1,0 +1,7 @@
+# --follow and --tail are mutually exclusive (ASSUMPTIONS.md). exit 2.
+
+mockd start
+! agentctl logs --follow --tail 5 agent-x
+stderr 'mutually exclusive'
+mockd assert-method-called StreamEvents 0
+mockd assert-method-called AgentLogs 0

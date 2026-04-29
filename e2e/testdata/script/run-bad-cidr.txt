@@ -1,0 +1,12 @@
+# CIDR /33 is invalid → exit 3.
+
+mockd start
+! agentctl run -f manifest.yaml
+stderr '"10\.0\.0\.0/33" is not a valid host pattern'
+mockd assert-method-called RunAgent 0
+
+-- manifest.yaml --
+name: bad-cidr
+command: ["/bin/true"]
+allowed_hosts: ["10.0.0.0/33"]
+allowed_paths: []

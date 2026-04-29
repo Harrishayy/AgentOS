@@ -1,0 +1,14 @@
+# `agentctl run -f manifest.yaml` against a happy daemon.
+
+mockd start
+agentctl run -f manifest.yaml
+stdout 'Started '
+stdout 'pid=4242'
+stdout 'policy: hosts:1 paths:0 timeout:0'
+mockd assert-method-called RunAgent
+
+-- manifest.yaml --
+name: web-fetcher
+command: ["/usr/bin/curl", "-fsSL", "https://example.com"]
+allowed_hosts: ["example.com:443"]
+allowed_paths: []

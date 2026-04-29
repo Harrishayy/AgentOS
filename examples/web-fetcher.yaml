@@ -1,0 +1,9 @@
+# A minimal sandbox: curl one URL, exit. Anything outside the allowed host is
+# blocked at the kernel layer.
+name: web-fetcher
+command: ["/usr/bin/curl", "-fsSL", "https://example.com"]
+allowed_hosts:
+  - example.com:443
+allowed_paths: []
+timeout: "30s"
+description: "Smoke test: one outbound HTTPS request to example.com."

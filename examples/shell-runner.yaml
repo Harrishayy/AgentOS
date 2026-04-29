@@ -1,0 +1,10 @@
+# Run a shell pipeline. Demonstrates a tree allowance for /tmp/work and a
+# wildcard for /var/log/*.log.
+name: shell-runner
+command: ["/bin/sh", "-c", "ls /tmp/work && head -n1 /var/log/syslog"]
+allowed_hosts: []
+allowed_paths:
+  - /tmp/work/
+  - /var/log/*.log
+working_dir: /tmp/work
+description: "Demonstrates path tree (/tmp/work/) and glob (/var/log/*.log) policy."

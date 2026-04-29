@@ -1,0 +1,12 @@
+# Invalid path glob (** not allowed) → exit code 3, no daemon contact.
+
+mockd start
+! agentctl run -f manifest.yaml
+stderr '"/foo/\*\*" is not a valid path pattern'
+mockd assert-method-called RunAgent 0
+
+-- manifest.yaml --
+name: bad
+command: ["/bin/true"]
+allowed_hosts: []
+allowed_paths: ["/foo/**"]

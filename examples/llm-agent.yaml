@@ -1,0 +1,17 @@
+# A representative LLM agent: two API hosts, scoped /opt path, scratch log,
+# unprivileged uid, hard 5-minute wall-clock timeout.
+name: llm-agent
+command: ["/usr/bin/python3", "/opt/agents/demo.py"]
+allowed_hosts:
+  - api.anthropic.com:443
+  - api.openai.com:443
+allowed_paths:
+  - /opt/agents/
+  - /tmp/llm-agent.log
+working_dir: /opt/agents
+env:
+  ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+  PYTHONUNBUFFERED: "1"
+user: "65534"
+timeout: "5m"
+description: "LLM agent with two-provider egress allowlist; runs as nobody."

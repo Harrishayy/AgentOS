@@ -1,0 +1,7 @@
+# `agentctl --json list` emits a single JSON object on stdout.
+
+mockd start
+agentctl --json list
+stdout '"agents"'
+stdout '"agent-x"'
+mockd assert-method-called ListAgents

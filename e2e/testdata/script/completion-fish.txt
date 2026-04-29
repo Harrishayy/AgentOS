@@ -1,0 +1,4 @@
+# Completion script for fish is non-empty.
+
+agentctl completion fish
+stdout 'complete -c agentctl'

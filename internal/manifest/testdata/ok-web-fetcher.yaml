@@ -1,0 +1,6 @@
+name: web-fetcher
+command: ["/usr/bin/curl", "-fsSL", "https://api.openai.com/v1/models"]
+allowed_hosts:
+  - api.openai.com:443
+allowed_paths: []
+description: "Smoke test: one outbound request, blocked elsewhere."
