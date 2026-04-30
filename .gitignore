@@ -1,36 +1,59 @@
-# Build artifacts
+# --- Build artefacts -------------------------------------------------
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# eBPF outputs (compiled by `make -C bpf`)
 bpf/*.bpf.o
 bpf/vmlinux.h
-daemon/agentd
-daemon/test-client
-cli/agentctl/agentctl
 
-# Go binaries built at the repo root by `go build ./cmd/...`
+# Stray top-level Go-build outputs (in case someone runs `go build` directly)
 /agentctl
+/agentd
+/test-client
 
-# Python bytecode caches (generated when running scripts/orchestrator)
+# Generated bpf2go sources (when we add CO-RE generation)
+internal/bpf/*_bpfel.go
+internal/bpf/*_bpfeb.go
+internal/bpf/*_bpfel.o
+internal/bpf/*_bpfeb.o
+
+# --- Language ecosystems --------------------------------------------
+# Go
+vendor/
+*.cover
+coverage.txt
+
+# Python
 __pycache__/
 *.pyc
+.venv/
+*.egg-info/
 
-# Node.js dependencies and build outputs (viewer)
+# Node — the viewer ships two npm projects
 viewer/server/node_modules/
 viewer/viewer-app/node_modules/
 viewer/viewer-app/dist/
 
-# Transfer / release artifacts (git bundles, tarballs, etc.)
-/dist/
-
-# Vendored upstream — Tetragon reference, do not commit
+# --- Vendored upstream (kept out of the tree) -----------------------
 vendor/tetragon/
 
-# Vagrant per-machine state (SSH keys, box IDs, etc.)
-.vagrant/
-*-VBoxHeadless-*.log
+# --- Environments and secrets ---------------------------------------
+.env
+.env.local
 
-# Editor cruft
+# --- IDE / OS cruft -------------------------------------------------
 .DS_Store
 *.swp
 *~
+.idea/
+.vscode/
 
-# macOS-only DMG that snuck in early
+# --- VM tooling per-machine state -----------------------------------
+.vagrant/
+*-VBoxHeadless-*.log
+
+# --- Misc binaries that have snuck in ------------------------------
 *.dmg

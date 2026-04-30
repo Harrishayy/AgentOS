@@ -23,9 +23,9 @@ import (
 
 	"github.com/rogpeppe/go-internal/testscript"
 
-	"github.com/agent-sandbox/cli/cmd/agentctl/agentctlcmd"
-	"github.com/agent-sandbox/cli/internal/daemon"
-	"github.com/agent-sandbox/cli/internal/testutil"
+	"github.com/agent-sandbox/runtime/cmd/agentctl/app"
+	"github.com/agent-sandbox/runtime/internal/client"
+	"github.com/agent-sandbox/runtime/internal/testutil"
 )
 
 // TestMain forwards to testscript.RunMain so the test binary doubles as the
@@ -35,7 +35,7 @@ import (
 // like --json that the standard library knows nothing about.
 func TestMain(m *testing.M) {
 	os.Exit(testscript.RunMain(m, map[string]func() int{
-		"agentctl": agentctlcmd.Main,
+		"agentctl": app.Main,
 	}))
 }
 
@@ -112,7 +112,7 @@ func mockdCmd(ts *testscript.TestScript, neg bool, args []string) {
 		if len(args) < 4 {
 			ts.Fatalf("mockd push: usage: mockd push CATEGORY TYPE JSONDATA")
 		}
-		ev := daemon.Event{
+		ev := client.Event{
 			Schema:   "v1",
 			TS:       time.Now().UTC().Format(time.RFC3339Nano),
 			Agent:    "test",
@@ -163,7 +163,7 @@ type scriptMockServer struct {
 	mu       sync.Mutex
 	cfg      map[string]string
 	calls    map[string]int
-	streamCh chan daemon.Event
+	streamCh chan client.Event
 	streamMu sync.Mutex
 }
 
@@ -192,17 +192,17 @@ func (s *scriptMockServer) configure(k, v string) {
 }
 
 func (s *scriptMockServer) installDefaults() {
-	s.mock.OnRunAgent(func(req *daemon.RunAgentRequest) (*daemon.RunAgentResult, *daemon.WireError) {
+	s.mock.OnRunAgent(func(req *client.RunAgentRequest) (*client.RunAgentResult, *client.WireError) {
 		s.bump("RunAgent")
 		// Honour configured failure modes.
 		if code := s.cfg["run_error_code"]; code != "" {
-			return nil, &daemon.WireError{Code: code, Message: s.cfg["run_error_message"]}
+			return nil, &client.WireError{Code: code, Message: s.cfg["run_error_message"]}
 		}
 		name := req.Manifest.Name
 		if name == "" {
 			name = "agent"
 		}
-		return &daemon.RunAgentResult{
+		return &client.RunAgentResult{
 			Name:          name,
 			AgentID:       "01H8X0",
 			PID:           4242,
@@ -211,25 +211,25 @@ func (s *scriptMockServer) installDefaults() {
 			PolicySummary: fmt.Sprintf("hosts:%d paths:%d timeout:0", len(req.Manifest.AllowedHosts), len(req.Manifest.AllowedPaths)),
 		}, nil
 	})
-	s.mock.OnList(func() (*daemon.ListAgentsResult, *daemon.WireError) {
+	s.mock.OnList(func() (*client.ListAgentsResult, *client.WireError) {
 		s.bump("ListAgents")
 		exit0 := 0
-		return &daemon.ListAgentsResult{Agents: []daemon.AgentInfo{
+		return &client.ListAgentsResult{Agents: []client.AgentInfo{
 			{Name: "agent-x", AgentID: "01H8X0", Status: "running", PID: 4242, UptimeNS: int64(192e9), PolicySummary: "hosts:1 paths:0 timeout:0"},
 			{Name: "gone", AgentID: "01F00B", Status: "exited", PID: 0, UptimeNS: 0, PolicySummary: "hosts:0 paths:1 timeout:30s", ExitCode: &exit0},
 		}}, nil
 	})
-	s.mock.OnStop(func(req *daemon.StopAgentRequest) (*daemon.StopAgentResult, *daemon.WireError) {
+	s.mock.OnStop(func(req *client.StopAgentRequest) (*client.StopAgentResult, *client.WireError) {
 		s.bump("StopAgent")
 		if s.cfg["stop_error_code"] != "" {
-			return nil, &daemon.WireError{Code: s.cfg["stop_error_code"], Message: s.cfg["stop_error_message"]}
+			return nil, &client.WireError{Code: s.cfg["stop_error_code"], Message: s.cfg["stop_error_message"]}
 		}
-		return &daemon.StopAgentResult{Name: req.Name, ExitCode: 0, Signal: "SIGTERM", DurationNS: int64(123 * time.Millisecond)}, nil
+		return &client.StopAgentResult{Name: req.Name, ExitCode: 0, Signal: "SIGTERM", DurationNS: int64(123 * time.Millisecond)}, nil
 	})
-	s.mock.OnLogs(func(req *daemon.AgentLogsRequest) (*daemon.AgentLogsResult, *daemon.WireError) {
+	s.mock.OnLogs(func(req *client.AgentLogsRequest) (*client.AgentLogsResult, *client.WireError) {
 		s.bump("AgentLogs")
 		// Five canned events so a slice by req.TailN is observable.
-		evs := []daemon.Event{
+		evs := []client.Event{
 			{Schema: "v1", TS: "2026-04-29T12:00:00Z", Agent: req.Name, AgentID: "01H8X0", Category: "agent", Type: "stdout", Data: json.RawMessage(`{"line":"first"}`)},
 			{Schema: "v1", TS: "2026-04-29T12:00:01Z", Agent: req.Name, AgentID: "01H8X0", Category: "agent", Type: "stdout", Data: json.RawMessage(`{"line":"second"}`)},
 			{Schema: "v1", TS: "2026-04-29T12:00:02Z", Agent: req.Name, AgentID: "01H8X0", Category: "agent", Type: "stdout", Data: json.RawMessage(`{"line":"third"}`)},
@@ -240,16 +240,16 @@ func (s *scriptMockServer) installDefaults() {
 		if n := req.TailN; n > 0 && n < len(evs) {
 			evs = evs[len(evs)-n:]
 		}
-		return &daemon.AgentLogsResult{Events: evs}, nil
+		return &client.AgentLogsResult{Events: evs}, nil
 	})
-	s.mock.OnStatus(func() (*daemon.DaemonStatusResult, *daemon.WireError) {
+	s.mock.OnStatus(func() (*client.DaemonStatusResult, *client.WireError) {
 		s.bump("DaemonStatus")
-		return &daemon.DaemonStatusResult{ProtocolVersion: "v1", Build: "mock-1.0", UptimeNS: int64(time.Hour), AgentsRunning: 2}, nil
+		return &client.DaemonStatusResult{ProtocolVersion: "v1", Build: "mock-1.0", UptimeNS: int64(time.Hour), AgentsRunning: 2}, nil
 	})
-	s.mock.OnStreamEvents(func(req *daemon.StreamEventsRequest, sink chan<- daemon.Event) {
+	s.mock.OnStreamEvents(func(req *client.StreamEventsRequest, sink chan<- client.Event) {
 		s.bump("StreamEvents")
 		s.streamMu.Lock()
-		s.streamCh = make(chan daemon.Event, 64)
+		s.streamCh = make(chan client.Event, 64)
 		ch := s.streamCh
 		s.streamMu.Unlock()
 		for ev := range ch {
@@ -258,7 +258,7 @@ func (s *scriptMockServer) installDefaults() {
 	})
 }
 
-func (s *scriptMockServer) pushEvent(ev daemon.Event) {
+func (s *scriptMockServer) pushEvent(ev client.Event) {
 	// Wait briefly for the script to call `agentctl logs --follow`.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {

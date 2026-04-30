@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/agent-sandbox/cli/internal/render"
+	"github.com/agent-sandbox/runtime/internal/render"
 )
 
 func newStopCmd() *cobra.Command {

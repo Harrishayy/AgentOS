@@ -1,47 +1,86 @@
-# Top-level orchestration. Run `make` inside the Vagrant VM.
+# Agent Sandbox Runtime — top-level Makefile
 #
-#   make             -> bpf + daemon + cli
-#   make install     -> copy binaries + UI + policies into /usr/local + /etc
-#   make run         -> launch agentd in foreground (dev)
-#   make clean
+# Layout: a single Go module rooted at the repo with three binaries under cmd/
+# and four eBPF objects produced by bpf/Makefile. Build artifacts land in
+# bin/ at the repo root and are gitignored.
+#
+# Common targets:
+#   make all            build everything (bpf + go binaries)
+#   make agentd         build just the daemon
+#   make agentctl       build just the CLI
+#   make test-client    build the IPC test client
+#   make bpf            (re)compile the eBPF objects
+#   make test           run all Go unit tests
+#   make integration    run integration tests (requires Linux + root)
+#   make install        install binaries + bpf objects + systemd unit
+#   make uninstall      reverse install
+#   make clean          remove built artifacts
+#
+# After a fresh `make all` you can run the daemon directly:
+#   sudo ./bin/agentd -bpf-dir=$(pwd)/bpf
+# and the CLI in another terminal:
+#   sudo ./bin/agentctl run -f examples/blocked-net.yaml
 
-PREFIX     ?= /usr/local
-BPF_OUT    := bpf
-DAEMON_OUT := daemon/agentd
-CLI_OUT    := cli/agentctl/agentctl
+PREFIX ?= /usr/local
+BIN_DIR := bin
 
-.PHONY: all bpf daemon cli install run clean
+GO_FLAGS ?=
+GO_BUILD := go build $(GO_FLAGS)
 
-all: bpf daemon cli
+.PHONY: all bpf agentd agentctl test-client \
+        test integration e2e \
+        install uninstall fmt vet lint clean help
+
+all: bpf agentd agentctl test-client
 
 bpf:
 	$(MAKE) -C bpf
 
-daemon:
-	cd daemon && go mod tidy && go build -o agentd ./cmd/agentd
+agentd: $(BIN_DIR)
+	$(GO_BUILD) -o $(BIN_DIR)/agentd ./cmd/agentd
 
-cli:
-	cd cli/agentctl && go mod tidy && go build -o agentctl .
+agentctl: $(BIN_DIR)
+	$(GO_BUILD) -o $(BIN_DIR)/agentctl ./cmd/agentctl
+
+test-client: $(BIN_DIR)
+	$(GO_BUILD) -o $(BIN_DIR)/test-client ./cmd/test-client
+
+$(BIN_DIR):
+	@mkdir -p $(BIN_DIR)
+
+# Excludes node_modules so the bundled flatted Go file in viewer/viewer-app
+# doesn't pollute the test set.
+GO_PKGS := $(shell go list ./... 2>/dev/null | grep -v '/node_modules/')
+
+test:
+	go test $(GO_PKGS)
+
+integration:
+	@echo "Integration tests must run on Linux as root (eBPF + cgroup v2)."
+	sudo -E go test -tags=integration $(GO_PKGS)
+
+e2e: agentctl
+	go test ./e2e/...
 
 install: all
-	install -d $(DESTDIR)$(PREFIX)/bin
-	install -d $(DESTDIR)/usr/lib/agentsandbox/bpf
-	install -d $(DESTDIR)/usr/share/agentsandbox/ui
-	install -d $(DESTDIR)/etc/agentsandbox/policies
-	install -m 0755 $(DAEMON_OUT) $(DESTDIR)$(PREFIX)/bin/agentd
-	install -m 0755 $(CLI_OUT)    $(DESTDIR)$(PREFIX)/bin/agentctl
-	install -m 0644 bpf/*.bpf.o   $(DESTDIR)/usr/lib/agentsandbox/bpf/
-	install -m 0644 gui/*         $(DESTDIR)/usr/share/agentsandbox/ui/
-	install -m 0644 policies/*.yaml $(DESTDIR)/etc/agentsandbox/policies/
-	install -m 0644 systemd/agentsandbox.service \
-	        $(DESTDIR)/etc/systemd/system/agentsandbox.service
+	bash deploy/install.sh
 
-run: all
-	sudo ./$(DAEMON_OUT) \
-	    --bpf-dir=$(PWD)/bpf \
-	    --ui-dir=$(PWD)/gui \
-	    --policy-dir=$(PWD)/policies
+uninstall:
+	bash deploy/uninstall.sh
+
+fmt:
+	gofmt -w $(shell find . -type f -name '*.go' -not -path '*/node_modules/*')
+
+vet:
+	go vet $(GO_PKGS)
+
+lint:
+	@command -v golangci-lint >/dev/null 2>&1 || { echo "golangci-lint not installed; brew install golangci-lint or see https://golangci-lint.run"; exit 1; }
+	golangci-lint run
 
 clean:
+	rm -rf $(BIN_DIR)
 	$(MAKE) -C bpf clean
-	rm -f $(DAEMON_OUT) $(CLI_OUT)
+
+help:
+	@grep -E '^[a-zA-Z0-9_-]+:.*' Makefile | sed 's/:.*//' | sort -u

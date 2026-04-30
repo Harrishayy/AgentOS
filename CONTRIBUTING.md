@@ -1,34 +1,71 @@
 # Contributing
 
-This is a 4-week academic project. All teammates have write access to main.
+Thanks for considering a contribution. This project is built and
+maintained as one open-source codebase, not five branches glued
+together.
 
-## Branches
+## Repo layout (TL;DR)
 
-Work on your own branch and open a PR to merge into `main`.
+The repo is a **single Go module** rooted at the top level
+(`github.com/agent-sandbox/runtime`). Binaries under `cmd/`,
+shared libraries under `internal/`. The eBPF source, Python
+orchestrator, and Node viewer have their own subtrees but build
+through the same top-level `Makefile`.
 
-| Branch | Owner |
-|---|---|
-| `p1/ebpf` | P1 |
-| `p2/daemon` | P2 |
-| `p3/cli` | P3 |
-| `p4/orchestrator` | P4 |
-| `p5/viewer` | P5 |
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full tour
+and [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for the build
+instructions.
 
-## Commit style
+## Where to file changes
+
+Use a topic-prefixed branch name and matching commit subject prefix:
+
+| Touches                                  | Branch / commit prefix |
+|------------------------------------------|------------------------|
+| eBPF C source (`bpf/`)                   | `bpf:`                 |
+| Daemon (`cmd/agentd`, `internal/...`)    | `daemon:`              |
+| CLI (`cmd/agentctl`, `internal/cli|manifest|client|render`) | `cli:` |
+| Python orchestrator (`orchestrator/`)    | `orch:`                |
+| Viewer (`viewer/`)                       | `viewer:`              |
+| Wire-protocol or schema changes          | `proto:`               |
+| Documentation (`docs/`, README)          | `docs:`                |
+| Build / CI                               | `build:`               |
+| Cross-cutting refactor                   | `refactor:`            |
+
+Example commit subjects:
 
 ```
-p2: add cgroup v2 lifecycle management
-p5: scaffold WebSocket server
-fix: correct daemon socket path
+daemon: pre-create working_dir before exec
+cli: accept mode/allowed_bins/forbidden_caps in manifest schema
+bpf: harden has_prefix against zero-length prefix
+docs: document the BPF LSM cmdline gotcha
 ```
 
-## PR rules
+Keep subjects ≤ 70 characters. Body wraps at 72.
 
-- At least one teammate reviews before merge
-- CI must pass (linter + basic tests)
-- Update the decision log for any architectural change
+## PR checklist
 
-## Decision log
+- [ ] `make test` passes locally.
+- [ ] If you touched kernel-side code, `make integration` passes on a
+      Linux box with the BPF LSM enabled.
+- [ ] If you added a manifest field or RPC method, the
+      [`docs/INTERFACES.md`](docs/INTERFACES.md) reference is updated.
+- [ ] One reviewer approval before merge.
 
-All architectural decisions go in the shared decision log (link in Notion/HackMD).
-Format: **What** was decided | **Why** | **Alternatives considered**.
+CI runs unit tests on every push; integration tests run on demand
+via the `integration` workflow_dispatch trigger.
+
+## Code style
+
+- Comments explain *why* the code is the way it is, not what it
+  does. If the *why* is obvious, no comment.
+- Don't refactor adjacent code "while you're there." Land minimal,
+  reviewable diffs; cleanup goes in its own PR.
+- Match the surrounding style. Run `make fmt` before committing.
+
+## Reporting bugs
+
+- Functional bug: open an issue with steps, expected, actual, and
+  the relevant per-agent log line if any.
+- Security issue: see [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)
+  for the disclosure process — please don't open a public issue.

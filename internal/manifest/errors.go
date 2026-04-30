@@ -27,6 +27,8 @@ const (
 	CodeBadStdin            Code = "bad_stdin"
 	CodeDuplicateKey        Code = "duplicate_key"
 	CodeBadEnvKey           Code = "bad_env_key"
+	CodeBadMode             Code = "bad_mode"
+	CodeBadCapability       Code = "bad_capability"
 )
 
 // Error is a single manifest validation failure with line/column precision.

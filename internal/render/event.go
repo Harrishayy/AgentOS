@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agent-sandbox/cli/internal/daemon"
+	"github.com/agent-sandbox/runtime/internal/client"
 )
 
 // HumanEvent renders one event in the colon-prefixed line format used by
@@ -17,7 +17,7 @@ import (
 //
 // Type-specific summarisers are registered via the `summarisers` table; an
 // unknown subtype falls back to the raw JSON of `data`.
-func HumanEvent(w io.Writer, ev *daemon.Event) {
+func HumanEvent(w io.Writer, ev *client.Event) {
 	t := timeOf(ev.TS)
 	fmt.Fprintf(w, "%s  %s  %s.%s  %s\n",
 		t, ev.Agent, ev.Category, ev.Type, summariseEvent(ev))
@@ -30,7 +30,7 @@ func timeOf(ts string) string {
 	return "--:--:--"
 }
 
-func summariseEvent(ev *daemon.Event) string {
+func summariseEvent(ev *client.Event) string {
 	key := ev.Category + "." + ev.Type
 	if fn, ok := summarisers[key]; ok {
 		if s, ok := fn(ev.Data); ok {

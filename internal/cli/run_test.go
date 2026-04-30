@@ -6,20 +6,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agent-sandbox/cli/internal/daemon"
-	"github.com/agent-sandbox/cli/internal/manifest"
+	"github.com/agent-sandbox/runtime/internal/client"
+	"github.com/agent-sandbox/runtime/internal/manifest"
 )
 
 // TestManifestPayload_FieldsMatch asserts that manifest.Manifest and
-// daemon.ManifestPayload expose the same JSON field set. manifestToPayload
+// client.ManifestPayload expose the same JSON field set. manifestToPayload
 // hand-copies fields between the two structs (run.go), so a mismatch here
 // would silently drop data on the wire when either struct gains a field.
 func TestManifestPayload_FieldsMatch(t *testing.T) {
 	want := jsonFieldSet(reflect.TypeOf(manifest.Manifest{}))
-	got := jsonFieldSet(reflect.TypeOf(daemon.ManifestPayload{}))
+	got := jsonFieldSet(reflect.TypeOf(client.ManifestPayload{}))
 
 	if !reflect.DeepEqual(want, got) {
-		t.Fatalf("JSON field set drift between manifest.Manifest and daemon.ManifestPayload\n  manifest.Manifest:        %v\n  daemon.ManifestPayload:   %v\n  hint: update manifestToPayload (internal/cli/run.go) to copy any new fields",
+		t.Fatalf("JSON field set drift between manifest.Manifest and client.ManifestPayload\n  manifest.Manifest:        %v\n  client.ManifestPayload:   %v\n  hint: update manifestToPayload (internal/cli/run.go) to copy any new fields",
 			want, got)
 	}
 }
@@ -30,16 +30,19 @@ func TestManifestPayload_FieldsMatch(t *testing.T) {
 // structs but forgotten in the copy.
 func TestManifestToPayload_CopiesAllFields(t *testing.T) {
 	src := &manifest.Manifest{
-		Name:         "agent-x",
-		Command:      []string{"/bin/true"},
-		AllowedHosts: []string{"api.example.com"},
-		AllowedPaths: []string{"/etc/x"},
-		WorkingDir:   "/tmp/x",
-		Env:          map[string]string{"K": "V"},
-		User:         "1000",
-		Stdin:        "close",
-		TimeoutNS:    30_000_000_000,
-		Description:  "test",
+		Name:          "agent-x",
+		Command:       []string{"/bin/true"},
+		Mode:          "enforce",
+		AllowedHosts:  []string{"api.example.com"},
+		AllowedPaths:  []string{"/etc/x"},
+		AllowedBins:   []string{"/bin/true"},
+		ForbiddenCaps: []string{"CAP_SYS_ADMIN"},
+		WorkingDir:    "/tmp/x",
+		Env:           map[string]string{"K": "V"},
+		User:          "1000",
+		Stdin:         "close",
+		TimeoutNS:     30_000_000_000,
+		Description:   "test",
 	}
 	got := manifestToPayload(src)
 

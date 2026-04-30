@@ -1,91 +1,255 @@
 # Agent Sandbox Runtime
 
-A Linux-based sandbox that prevents prompt-injected AI agents from making
-unauthorized network connections — enforced at the kernel level using eBPF.
-
-## What it does
-
-When an AI agent gets tricked via prompt injection, it might try to exfiltrate
-data or connect to malicious hosts. Standard Python-level guardrails can be
-bypassed. This runtime moves enforcement *below* the agent — into the kernel
-itself — so the bad syscall is blocked regardless of what the agent was told to do.
+**A Linux runtime that stops prompt-injected AI agents from doing damage.**
+The policy lives in the kernel, not in the agent — so even an agent
+that's been fully hijacked by a prompt injection cannot reach the
+attacker's host, read your secrets, or escalate privileges. The bad
+syscall fails with `EPERM`; the operator sees it land in a live
+dashboard.
 
 ```
-┌──────────────────────────────────┐
-│   agentctl run my-agent.yaml     │  ← you write this
-└───────────────┬──────────────────┘
-                │
-       ┌────────▼─────────┐
-       │   Sandbox daemon  │  ← creates cgroup, loads eBPF policy
-       └────────┬──────────┘
-                │
-       ┌────────▼──────────┐
-       │    AI agent        │  ← runs inside cgroup
-       └────────┬───────────┘
-                │ tries to connect to evil.com
-       ┌────────▼───────────┐
-       │   eBPF (kernel)    │  ← BLOCKED at ring 0
-       └────────────────────┘
+  agentctl run my-agent.yaml
+              │
+              ▼
+       agentd daemon  ──── creates a sandbox, loads the policy
+              │
+              ▼
+        your AI agent ──── runs normally inside the sandbox
+              │
+              ▼
+   eBPF programs in the kernel  ──── allow the syscalls in the
+                                     manifest, deny everything else
 ```
 
-## Quickstart
+## What this is for
 
-### Step 1 — Get a Linux environment
+You should look at this project if you're:
 
-**Apple Silicon Mac (M1/M2/M3/M4):**
+- **Building an AI agent that touches a real machine.** Anything with
+  a `fetch_url`, `run_command`, `read_file`, or `write_file` tool.
+  Python guardrails in your agent code are not a defence against
+  prompt injection — the agent itself is the layer the attacker is
+  driving. This runtime moves the policy below the agent.
+- **Running untrusted agents on shared infrastructure.** Multi-tenant
+  hosts, CI runners, eval harnesses where the prompts come from
+  outside.
+- **Studying agent security.** The repo includes a worked prompt
+  injection demo (`orchestrator/evil_server.py`) and a real-time
+  dashboard so you can watch the attack land and the kernel block it.
+
+If your agents are already running inside an unprivileged container
+with a tight network policy, you have a partial answer to the same
+problem. This runtime gives you a finer-grained, per-agent policy
+(distinct allow-lists per agent, instead of one container-wide one)
+and per-syscall observability (every denied attempt, with full
+context, on the dashboard).
+
+> Want a guided tour of how each piece works in plain English?
+> See [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md).
+> For the deep technical version with Linux primitives taught from
+> scratch, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+---
+
+## Spin up the whole thing in 5 minutes
+
+You need a Linux 6.8+ environment. On a Mac, the recommended path is
+Lima (lightweight, native on Apple Silicon). All commands below
+assume you're starting from a fresh checkout of this repo.
+
+### Step 1 — boot a Linux VM (skip if you're already on Linux)
+
+**Apple Silicon Mac** (M1/M2/M3/M4):
+
 ```bash
 brew install lima
-limactl start --name=agentsandbox template:ubuntu-lts
-limactl shell agentsandbox
+limactl start --name=agentsandbox \
+  --cpus=4 --memory=4 --disk=30 \
+  --mount-writable --mount=$(pwd) \
+  template:ubuntu-lts
 ```
 
-**Intel Mac / Linux / Windows (via VirtualBox):**
+**Intel Mac / Windows / other**:
+
 ```bash
-brew install vagrant        # Mac only; skip on Linux/Windows
-vagrant up
+brew install vagrant       # macOS only
+vagrant up                  # uses the Vagrantfile in this repo
 vagrant ssh
 ```
 
-### Step 2 — Run the setup script (inside Linux)
+### Step 2 — open a shell inside the VM
+
 ```bash
-cd /path/to/agentsandbox
+limactl shell agentsandbox     # or: vagrant ssh
+cd /Users/<you>/Documents/AgentOS    # (Lima mounts your $HOME read-write at the same path)
+```
+
+### Step 3 — install dependencies + activate BPF LSM
+
+```bash
 bash scripts/setup-vm.sh
 ```
 
-This installs all project dependencies and verifies the eBPF requirements.
+The script installs Go, Node, the eBPF toolchain, and verifies the
+BPF Linux Security Module is active. **If the script prints a yellow
+"REBOOT REQUIRED" banner**, run `sudo reboot`, log back in, and
+verify with:
 
-### Step 3 — Run an agent
 ```bash
-agentctl run examples/demo-agent.yaml
+cat /sys/kernel/security/lsm | grep -o bpf
+# → bpf
 ```
 
-## Manifest format
+This is the most important check. Without `bpf` in this list, every
+LSM hook will load but never fire — every policy decision will
+silently allow.
+
+### Step 4 — build everything
+
+```bash
+make all
+```
+
+Produces:
+
+- `bin/agentd` — the daemon
+- `bin/agentctl` — the CLI
+- `bin/test-client` — a raw IPC test client
+- `bpf/*.bpf.o` — the four eBPF programs
+
+### Step 5 — start the daemon (terminal #1)
+
+```bash
+sudo ./bin/agentd \
+  -bpf-dir=$(pwd)/bpf \
+  -socket=/run/agent-sandbox.sock \
+  -ws-addr=127.0.0.1:7443
+```
+
+The daemon must run as root (or with `CAP_BPF + CAP_NET_ADMIN +
+CAP_SYS_ADMIN`) to load eBPF. It stays in the foreground; leave this
+terminal open. You'll see startup logs ending in `daemon listening`.
+
+### Step 6 — start the live dashboard (terminal #2, optional)
+
+```bash
+bash viewer/scripts/start-viewer.sh
+```
+
+Open **`http://127.0.0.1:8765`** in your normal Mac/host browser
+(Lima and Vagrant auto-forward loopback ports). Two panes appear: LLM
+events on the left, kernel events on the right. Real events stream in
+once you launch an agent. The viewer also spawns a small bridge
+process that subscribes to the daemon's event stream — so kernel
+events show up in the dashboard automatically.
+
+### Step 7 — run an agent (terminal #3)
+
+```bash
+# A manifest with no allowed_hosts — every connect should be denied.
+sudo ./bin/agentctl --socket=/run/agent-sandbox.sock \
+  run -f examples/blocked-net.yaml
+# expected: agent prints "OK: kernel denied connect errno=1"
+
+# A manifest with 1.1.1.1 in allowed_hosts — same connect should succeed.
+sudo ./bin/agentctl --socket=/run/agent-sandbox.sock \
+  run -f examples/allowed-net.yaml
+# expected: agent prints "OK: connect succeeded"
+```
+
+Watch the dashboard while you do this — you'll see the deny event
+appear in red on the right pane.
+
+For a complete smoke test that asserts both verdicts in one go:
+
+```bash
+sudo bash examples/test-it.sh
+```
+
+### Step 8 — write your own manifest
 
 ```yaml
+# my-agent.yaml
 name: my-agent
-command: ["python", "agent.py"]
+command: ["python3", "agent.py"]
+mode: enforce                  # "audit" for observe-only mode
 allowed_hosts:
-  - api.openai.com
-  - api.anthropic.com
+  - api.openai.com:443
+  - api.anthropic.com:443
 allowed_paths:
   - /tmp/agent-workdir
+allowed_bins:                  # optional; empty = allow any binary
+  - /usr/bin/python3
+forbidden_caps:                # optional; refuses these privilege grants
+  - CAP_SYS_ADMIN
+  - CAP_BPF
+working_dir: /tmp/agent-workdir
+env:
+  AGENT_NAME: my-agent
 ```
+
+Then `sudo ./bin/agentctl --socket=/run/agent-sandbox.sock run -f my-agent.yaml`.
+
+Full manifest schema and validation rules:
+[`docs/INTERFACES.md`](docs/INTERFACES.md).
+
+---
+
+## Stopping it cleanly
+
+```bash
+# In terminal #1: Ctrl-C the daemon. Any agents it spawned will be reaped.
+# In terminal #2: Ctrl-C the viewer.
+# Or, from anywhere:
+sudo pkill -INT agentd
+sudo pkill -INT -f "node server.js"
+```
+
+To remove the VM entirely (Lima):
+
+```bash
+limactl stop agentsandbox
+limactl delete agentsandbox
+```
+
+---
+
+## Documentation
+
+| Document                                                | What it covers                                                  |
+|---------------------------------------------------------|-----------------------------------------------------------------|
+| [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md)          | Plain-English tour of every stage. Read this first.             |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)          | Deep technical guide: Linux primitives, eBPF, LLM agents, full data path. |
+| [`docs/INTERFACES.md`](docs/INTERFACES.md)              | Wire-protocol reference: IPC framing, RPC methods, event schemas. |
+| [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)          | What we defend against, what we don't, operator assumptions.    |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)            | How to build, test, and contribute.                             |
+| [`docs/operations.md`](docs/operations.md)              | Running the daemon as a long-lived systemd service.             |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)                    | Branch and commit conventions, PR checklist.                    |
+
+---
 
 ## Requirements
 
-- Ubuntu 24.04 (kernel 6.8+)
-- BPF LSM enabled (`CONFIG_BPF_LSM=y`)
-- cgroup v2 unified hierarchy
+- Ubuntu 24.04 (kernel 6.8+) or any distro on kernel 6.8+
+- `CONFIG_BPF_LSM=y` **and** `bpf` in the runtime `lsm=` cmdline
+  (`scripts/setup-vm.sh` handles this automatically)
+- cgroup v2 unified hierarchy (Ubuntu 24.04 default)
+- Go 1.23, Node 20+, Python 3.10+
+- For production: `CAP_BPF`, `CAP_NET_ADMIN`, `CAP_SYS_ADMIN` on the
+  daemon. The systemd unit in [`deploy/systemd/`](deploy/systemd/)
+  grants exactly those.
 
-## Architecture
+## Components
 
-| Component | Owner | Description |
-|---|---|---|
-| eBPF enforcement | P1 | Kernel programs intercepting network syscalls |
-| Sandbox daemon | P2 | Cgroup lifecycle, policy loading, process launch |
-| CLI + manifest | P3 | `agentctl` command and YAML format |
-| Orchestrator | P4 | Multi-agent management and demo |
-| Process viewer | P5 | Real-time web UI for LLM + kernel events |
+| Subtree            | Language     | Purpose                                                            |
+|--------------------|--------------|--------------------------------------------------------------------|
+| `bpf/`             | C (eBPF)     | Kernel-side policy engine — LSM hooks for net, file, exec, creds   |
+| `cmd/agentd/`      | Go           | The privileged daemon — cgroup + BPF + process lifecycle           |
+| `cmd/agentctl/`    | Go           | The CLI — manifest validation, daemon RPC, event tail              |
+| `cmd/test-client/` | Go           | A raw IPC client for protocol testing                              |
+| `internal/`        | Go           | Shared libraries — `bpf`, `cgroup`, `events`, `ipc`, `policy`, etc.|
+| `orchestrator/`    | Python       | LLM-driven launcher and prompt-injection demo                      |
+| `viewer/`          | Node + React | Real-time event dashboard + daemon bridge                          |
 
 ## License
 

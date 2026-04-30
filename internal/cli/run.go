@@ -9,9 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/agent-sandbox/cli/internal/daemon"
-	"github.com/agent-sandbox/cli/internal/manifest"
-	"github.com/agent-sandbox/cli/internal/render"
+	"github.com/agent-sandbox/runtime/internal/client"
+	"github.com/agent-sandbox/runtime/internal/manifest"
+	"github.com/agent-sandbox/runtime/internal/render"
 )
 
 func newRunCmd() *cobra.Command {
@@ -48,15 +48,26 @@ func newRunCmd() *cobra.Command {
 			}
 
 			payload := manifestToPayload(m)
-			source := daemon.ManifestSource{Path: abs, SHA256: sha256Hex(data)}
-			req := &daemon.RunAgentRequest{
+
+			// The daemon will chdir into payload.WorkingDir before exec(); if the
+			// directory doesn't exist clone3() returns ENOENT and Go's os/exec
+			// surfaces that as a misleading "fork/exec <cmd>: no such file or
+			// directory". Pre-create it here so the manifest's default of
+			// /tmp/agentctl/<name> Just Works. Failure is non-fatal — the daemon
+			// will still report a clean error if it really can't chdir.
+			if payload.WorkingDir != "" {
+				_ = os.MkdirAll(payload.WorkingDir, 0o755)
+			}
+
+			source := client.ManifestSource{Path: abs, SHA256: sha256Hex(data)}
+			req := &client.RunAgentRequest{
 				Manifest:       payload,
 				ManifestSource: source,
 				RestartOnCrash: restartOnCrash,
 				MaxRestarts:    maxRestarts,
 			}
 
-			rt.printlnIf("submitting manifest %q to daemon at %s", abs, daemon.ResolveSocketPath(rt.Socket))
+			rt.printlnIf("submitting manifest %q to daemon at %s", abs, client.ResolveSocketPath(rt.Socket))
 			cl := rt.newClient()
 			res, err := cl.RunAgent(c.Context(), req)
 			if err != nil {
@@ -79,18 +90,21 @@ func newRunCmd() *cobra.Command {
 // manifestToPayload converts the parsed manifest into the wire shape expected
 // by the daemon. The two structs share field tags but live in different
 // packages so we copy explicitly.
-func manifestToPayload(m *manifest.Manifest) daemon.ManifestPayload {
-	return daemon.ManifestPayload{
-		Name:         m.Name,
-		Command:      m.Command,
-		AllowedHosts: m.AllowedHosts,
-		AllowedPaths: m.AllowedPaths,
-		WorkingDir:   m.WorkingDir,
-		Env:          m.Env,
-		User:         m.User,
-		Stdin:        m.Stdin,
-		TimeoutNS:    m.TimeoutNS,
-		Description:  m.Description,
+func manifestToPayload(m *manifest.Manifest) client.ManifestPayload {
+	return client.ManifestPayload{
+		Name:          m.Name,
+		Command:       m.Command,
+		Mode:          m.Mode,
+		AllowedHosts:  m.AllowedHosts,
+		AllowedPaths:  m.AllowedPaths,
+		AllowedBins:   m.AllowedBins,
+		ForbiddenCaps: m.ForbiddenCaps,
+		WorkingDir:    m.WorkingDir,
+		Env:           m.Env,
+		User:          m.User,
+		Stdin:         m.Stdin,
+		TimeoutNS:     m.TimeoutNS,
+		Description:   m.Description,
 	}
 }
 

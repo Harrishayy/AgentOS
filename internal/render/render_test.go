@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agent-sandbox/cli/internal/daemon"
-	"github.com/agent-sandbox/cli/internal/render"
+	"github.com/agent-sandbox/runtime/internal/client"
+	"github.com/agent-sandbox/runtime/internal/render"
 )
 
 func TestHumanList_RoundsAndAligns(t *testing.T) {
 	exit := 0
-	agents := []daemon.AgentInfo{
+	agents := []client.AgentInfo{
 		{Name: "agent-x", AgentID: "01H8X0", Status: "running", PID: 4242, UptimeNS: int64(192e9), PolicySummary: "hosts:1 paths:0 timeout:0"},
 		{Name: "gone", AgentID: "01F00B", Status: "exited", PID: 0, UptimeNS: 0, PolicySummary: "hosts:0 paths:1 timeout:30s", ExitCode: &exit},
 	}
@@ -64,7 +64,7 @@ func TestHumanEvent_TypeSpecificSummarisers(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.category+"."+tc.typ, func(t *testing.T) {
 			var buf bytes.Buffer
-			ev := &daemon.Event{
+			ev := &client.Event{
 				Schema:   "v1",
 				TS:       "2026-04-29T12:34:56Z",
 				Agent:    "agent",
@@ -86,7 +86,7 @@ func TestHumanEvent_TypeSpecificSummarisers(t *testing.T) {
 }
 
 func TestHumanEvent_UnknownTypeFallsBackToJSON(t *testing.T) {
-	ev := &daemon.Event{
+	ev := &client.Event{
 		Schema:   "v1",
 		TS:       "2026-04-29T12:34:56Z",
 		Agent:    "agent",

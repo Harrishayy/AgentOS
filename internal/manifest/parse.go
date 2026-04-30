@@ -175,6 +175,34 @@ func parseAndValidate(path string, data []byte, lookup envLookup) (*Manifest, er
 		m.AllowedPaths = []string{}
 	}
 
+	// mode (optional enum: "audit" | "enforce", default "enforce" — set by daemon)
+	if n := seen["mode"]; n != nil {
+		if v, ok := scalarString(eb, n, "mode"); ok {
+			if !validMode(v) {
+				eb.addf(CodeBadMode, n.Line, n.Column, "mode",
+					"%q must be 'audit' or 'enforce'; got %q", "mode", v)
+			} else {
+				m.Mode = v
+			}
+		}
+	}
+
+	// allowed_bins (optional, list of absolute paths; empty list = allow any binary)
+	if n := seen["allowed_bins"]; n != nil {
+		if v, ok := stringSequence(eb, n, "allowed_bins"); ok {
+			validateAllowedBins(eb, n, v)
+			m.AllowedBins = v
+		}
+	}
+
+	// forbidden_caps (optional, list of capability names like "CAP_SYS_ADMIN")
+	if n := seen["forbidden_caps"]; n != nil {
+		if v, ok := stringSequence(eb, n, "forbidden_caps"); ok {
+			validateForbiddenCaps(eb, n, v)
+			m.ForbiddenCaps = v
+		}
+	}
+
 	// working_dir (optional, abs path)
 	if n := seen["working_dir"]; n != nil {
 		if v, ok := scalarString(eb, n, "working_dir"); ok {
