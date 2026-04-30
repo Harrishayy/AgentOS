@@ -13,7 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/agent-sandbox/cli/internal/daemon"
+	"github.com/agent-sandbox/runtime/internal/client"
 )
 
 // Build is overridden at link time via -ldflags="-X .../internal/cli.Build=...".
@@ -48,14 +48,14 @@ func appRuntimeFrom(ctx context.Context) *appRuntime {
 	return &appRuntime{Stdout: os.Stdout, Stderr: os.Stderr, DialTimeout: 5 * time.Second}
 }
 
-// newClient builds a daemon.Client from the appRuntime, resolving the socket
+// newClient builds a client.Client from the appRuntime, resolving the socket
 // path via discovery if --socket was empty.
-func (rt *appRuntime) newClient() *daemon.Client {
+func (rt *appRuntime) newClient() *client.Client {
 	sock := rt.Socket
 	if sock == "" {
-		sock = daemon.ResolveSocketPath("")
+		sock = client.ResolveSocketPath("")
 	}
-	return daemon.New(sock, daemon.WithDialTimeout(rt.DialTimeout))
+	return client.New(sock, client.WithDialTimeout(rt.DialTimeout))
 }
 
 // NewRoot constructs the top-level `agentctl` command.

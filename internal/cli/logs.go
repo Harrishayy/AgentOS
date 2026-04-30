@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/agent-sandbox/cli/internal/daemon"
-	"github.com/agent-sandbox/cli/internal/render"
+	"github.com/agent-sandbox/runtime/internal/client"
+	"github.com/agent-sandbox/runtime/internal/render"
 )
 
 func newLogsCmd() *cobra.Command {
@@ -53,7 +53,7 @@ func newLogsCmd() *cobra.Command {
 	return cmd
 }
 
-func runLogsTail(ctx context.Context, rt *appRuntime, cl *daemon.Client, name string, tail int, include []string) error {
+func runLogsTail(ctx context.Context, rt *appRuntime, cl *client.Client, name string, tail int, include []string) error {
 	if tail < 0 {
 		return UsageError(fmt.Errorf("--tail must be >= 0"))
 	}
@@ -71,8 +71,8 @@ func runLogsTail(ctx context.Context, rt *appRuntime, cl *daemon.Client, name st
 	return nil
 }
 
-func runLogsFollow(ctx context.Context, rt *appRuntime, cl *daemon.Client, name string, include []string) error {
-	stream, err := cl.StreamEvents(ctx, &daemon.StreamEventsRequest{Name: name, Include: include})
+func runLogsFollow(ctx context.Context, rt *appRuntime, cl *client.Client, name string, include []string) error {
+	stream, err := cl.StreamEvents(ctx, &client.StreamEventsRequest{Name: name, Include: include})
 	if err != nil {
 		return renderDaemonErr(rt, err)
 	}
@@ -107,7 +107,7 @@ func runLogsFollow(ctx context.Context, rt *appRuntime, cl *daemon.Client, name 
 	}
 }
 
-func emitEvent(rt *appRuntime, ev *daemon.Event) {
+func emitEvent(rt *appRuntime, ev *client.Event) {
 	if rt.JSON {
 		_ = render.JSON(rt.Stdout, ev)
 		return

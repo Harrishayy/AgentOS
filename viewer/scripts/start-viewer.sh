@@ -27,10 +27,14 @@ say() { printf '[start-viewer] %s\n' "$*"; }
 die() { printf '[start-viewer] error: %s\n' "$*" >&2; exit 1; }
 
 # --- Node version check ----------------------------------------------------
-command -v node >/dev/null 2>&1 || die "node not found on PATH — install Node 22+ first"
+# Production pieces (server.js, bridge.js) use the `ws` npm package and run on
+# Node ≥ 20, which is what scripts/setup-vm.sh installs. The optional dev
+# helper viewer/scripts/mock_kernel_sender.js needs Node 22+ for its built-in
+# global WebSocket — we don't gate startup on that.
+command -v node >/dev/null 2>&1 || die "node not found on PATH — install Node 20+ first"
 NODE_MAJOR="$(node -e 'process.stdout.write(process.versions.node.split(".")[0])')"
-if [ "$NODE_MAJOR" -lt 22 ]; then
-  die "Node $NODE_MAJOR detected — need Node 22+ (mock_kernel_sender.js uses built-in WebSocket)"
+if [ "$NODE_MAJOR" -lt 20 ]; then
+  die "Node $NODE_MAJOR detected — need Node 20+"
 fi
 say "node $(node -v) OK"
 
@@ -59,9 +63,23 @@ say "building viewer-app…"
 say "starting on http://localhost:${PORT}  (Ctrl-C to stop)"
 say "open the URL above in your browser; mocks can connect on the same port"
 
-# exec replaces this shell so SIGINT / SIGTERM go straight to Node — no orphan
-# child process if the user Ctrl-Cs.
 cd "$SERVER_DIR"
 export SERVE_STATIC=1
 export PORT
+
+# Optionally spawn the daemon→viewer bridge alongside the relay so the
+# dashboard sees real kernel events. Skip with BRIDGE=0 (or simply don't
+# run the daemon).
+if [ "${BRIDGE:-1}" = "1" ]; then
+  if [ -f "$SERVER_DIR/bridge.js" ]; then
+    say "starting daemon→viewer bridge (daemon WS :7443 → viewer :${PORT})"
+    node "$SERVER_DIR/bridge.js" &
+    BRIDGE_PID=$!
+    # Forward SIGINT / SIGTERM to the bridge so Ctrl-C tears down both processes.
+    trap 'kill $BRIDGE_PID 2>/dev/null || true' INT TERM EXIT
+  else
+    say "bridge.js not found, skipping bridge"
+  fi
+fi
+
 exec node server.js

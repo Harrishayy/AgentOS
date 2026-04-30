@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/agent-sandbox/cli/internal/manifest"
-	"github.com/agent-sandbox/cli/internal/render"
+	"github.com/agent-sandbox/runtime/internal/manifest"
+	"github.com/agent-sandbox/runtime/internal/render"
 )
 
 func newManifestCmd() *cobra.Command {

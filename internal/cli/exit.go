@@ -3,9 +3,9 @@ package cli
 import (
 	"errors"
 
-	"github.com/agent-sandbox/cli/internal/daemon"
-	"github.com/agent-sandbox/cli/internal/manifest"
-	"github.com/agent-sandbox/cli/internal/render"
+	"github.com/agent-sandbox/runtime/internal/client"
+	"github.com/agent-sandbox/runtime/internal/manifest"
+	"github.com/agent-sandbox/runtime/internal/render"
 )
 
 // Exit codes (DEC-009).
@@ -66,18 +66,18 @@ func MapExitCode(err error) int {
 	if errors.As(err, &me) {
 		return ExitManifestInvalid
 	}
-	if errors.Is(err, daemon.ErrDaemonUnreachable) {
+	if errors.Is(err, client.ErrDaemonUnreachable) {
 		return ExitDaemonUnreachable
 	}
-	if errors.Is(err, daemon.ErrAgentNotFound) {
+	if errors.Is(err, client.ErrAgentNotFound) {
 		return ExitAgentNotFound
 	}
-	var de *daemon.ServerError
+	var de *client.ServerError
 	if errors.As(err, &de) {
-		if de.Code == daemon.CodeAgentNotFound {
+		if de.Code == client.CodeAgentNotFound {
 			return ExitAgentNotFound
 		}
-		if de.Code == daemon.CodeInvalidManifest {
+		if de.Code == client.CodeInvalidManifest {
 			return ExitManifestInvalid
 		}
 		return ExitDaemonError
@@ -114,15 +114,15 @@ func renderDaemonErr(rt *appRuntime, err error) error {
 // classifyDaemonErr returns the wire code, message, and a bool indicating
 // whether err is a recognised daemon-side error.
 func classifyDaemonErr(err error) (code, message string, ok bool) {
-	var se *daemon.ServerError
+	var se *client.ServerError
 	if errors.As(err, &se) {
 		return se.Code, se.Message, true
 	}
-	if errors.Is(err, daemon.ErrDaemonUnreachable) {
-		return daemon.CodeDaemonUnreachable, err.Error(), true
+	if errors.Is(err, client.ErrDaemonUnreachable) {
+		return client.CodeDaemonUnreachable, err.Error(), true
 	}
-	if errors.Is(err, daemon.ErrAgentNotFound) {
-		return daemon.CodeAgentNotFound, err.Error(), true
+	if errors.Is(err, client.ErrAgentNotFound) {
+		return client.CodeAgentNotFound, err.Error(), true
 	}
 	return "", "", false
 }

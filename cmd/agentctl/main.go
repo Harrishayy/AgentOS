@@ -3,9 +3,9 @@ package main
 import (
 	"os"
 
-	"github.com/agent-sandbox/cli/cmd/agentctl/agentctlcmd"
+	"github.com/agent-sandbox/runtime/cmd/agentctl/app"
 )
 
 func main() {
-	os.Exit(agentctlcmd.Main())
+	os.Exit(app.Main())
 }

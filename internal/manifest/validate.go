@@ -191,6 +191,70 @@ func validUser(s string) bool {
 	return regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]{0,31}$`).MatchString(s)
 }
 
+// validMode accepts the two enforcement modes the daemon understands. Empty
+// is allowed at parse time and means "let the daemon apply its default"
+// (enforce).
+func validMode(s string) bool {
+	return s == "" || s == "audit" || s == "enforce"
+}
+
+// validateAllowedBins checks every entry is an absolute path with no NUL or
+// newline characters. Path-prefix semantics are documented in
+// bpf/exec.bpf.c: a binary is allowed if its filename has any allowed_bins
+// entry as a prefix.
+func validateAllowedBins(eb *errBuilder, n *yaml.Node, bins []string) {
+	for i, b := range bins {
+		line, col := childLineCol(n, i)
+		if b == "" {
+			eb.addf(CodeNonAbsolutePath, line, col, fmt.Sprintf("allowed_bins[%d]", i),
+				"allowed_bins entries must not be empty")
+			continue
+		}
+		if !strings.HasPrefix(b, "/") {
+			eb.addf(CodeNonAbsolutePath, line, col, fmt.Sprintf("allowed_bins[%d]", i),
+				"allowed_bins entries must be absolute paths; got %q", b)
+			continue
+		}
+		if strings.ContainsAny(b, "\x00\n\r") {
+			eb.addf(CodeInvalidPathPattern, line, col, fmt.Sprintf("allowed_bins[%d]", i),
+				"allowed_bins entries must not contain control characters; got %q", b)
+		}
+	}
+}
+
+// knownCapabilities is the closed set of Linux capability names the daemon
+// understands (see daemon/internal/policy.ForbiddenCapsMask). Anything else
+// is rejected at validation time so a typo like "CAP_SYS_ADIM" doesn't
+// silently shrink the deny list.
+var knownCapabilities = map[string]struct{}{
+	"CAP_AUDIT_CONTROL": {}, "CAP_AUDIT_READ": {}, "CAP_AUDIT_WRITE": {},
+	"CAP_BLOCK_SUSPEND": {}, "CAP_BPF": {}, "CAP_CHECKPOINT_RESTORE": {},
+	"CAP_CHOWN": {}, "CAP_DAC_OVERRIDE": {}, "CAP_DAC_READ_SEARCH": {},
+	"CAP_FOWNER": {}, "CAP_FSETID": {}, "CAP_IPC_LOCK": {},
+	"CAP_IPC_OWNER": {}, "CAP_KILL": {}, "CAP_LEASE": {},
+	"CAP_LINUX_IMMUTABLE": {}, "CAP_MAC_ADMIN": {}, "CAP_MAC_OVERRIDE": {},
+	"CAP_MKNOD": {}, "CAP_NET_ADMIN": {}, "CAP_NET_BIND_SERVICE": {},
+	"CAP_NET_BROADCAST": {}, "CAP_NET_RAW": {}, "CAP_PERFMON": {},
+	"CAP_SETGID": {}, "CAP_SETFCAP": {}, "CAP_SETPCAP": {},
+	"CAP_SETUID": {}, "CAP_SYS_ADMIN": {}, "CAP_SYS_BOOT": {},
+	"CAP_SYS_CHROOT": {}, "CAP_SYS_MODULE": {}, "CAP_SYS_NICE": {},
+	"CAP_SYS_PACCT": {}, "CAP_SYS_PTRACE": {}, "CAP_SYS_RAWIO": {},
+	"CAP_SYS_RESOURCE": {}, "CAP_SYS_TIME": {}, "CAP_SYS_TTY_CONFIG": {},
+	"CAP_SYSLOG": {}, "CAP_WAKE_ALARM": {},
+}
+
+// validateForbiddenCaps rejects entries that aren't a known capability name.
+// We use a strict closed set so a typo can't silently disable a deny rule.
+func validateForbiddenCaps(eb *errBuilder, n *yaml.Node, caps []string) {
+	for i, c := range caps {
+		line, col := childLineCol(n, i)
+		if _, ok := knownCapabilities[c]; !ok {
+			eb.addf(CodeBadCapability, line, col, fmt.Sprintf("forbidden_caps[%d]", i),
+				"unknown capability %q (expected one of CAP_*; see capabilities(7))", c)
+		}
+	}
+}
+
 // validStdin accepts "inherit", "close", or "file:<abs-path>". The file:
 // variant rejects embedded NUL/LF/CR/TAB so the path can't smuggle control
 // characters into the daemon's open(2) call.

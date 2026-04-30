@@ -17,17 +17,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agent-sandbox/cli/internal/daemon"
+	"github.com/agent-sandbox/runtime/internal/client"
 )
 
 // Handler maps a decoded request envelope to a response envelope. Used for
 // unary methods only.
-type Handler func(req *daemon.RequestEnvelope) *daemon.ResponseEnvelope
+type Handler func(req *client.RequestEnvelope) *client.ResponseEnvelope
 
 // StreamHandler is invoked when a StreamEvents subscription opens. The handler
 // pushes events on `sink` and returns when the stream should end. Closing
 // `sink` is optional — the connection loop closes it after the handler returns.
-type StreamHandler func(req *daemon.StreamEventsRequest, sink chan<- daemon.Event)
+type StreamHandler func(req *client.StreamEventsRequest, sink chan<- client.Event)
 
 // TB is the subset of testing.TB the mock needs. The standard *testing.T
 // satisfies it; e2e harnesses can supply their own implementation.
@@ -47,7 +47,7 @@ type MockDaemon struct {
 	mu          sync.Mutex
 	handlers    map[string]Handler
 	streamFn    StreamHandler
-	streamSinks map[*net.UnixConn]chan daemon.Event
+	streamSinks map[*net.UnixConn]chan client.Event
 
 	wg sync.WaitGroup
 
@@ -77,7 +77,7 @@ func NewWithSocket(t TB, sock string) *MockDaemon {
 		socket:      sock,
 		listener:    ln,
 		handlers:    map[string]Handler{},
-		streamSinks: map[*net.UnixConn]chan daemon.Event{},
+		streamSinks: map[*net.UnixConn]chan client.Event{},
 		calls:       map[string][]json.RawMessage{},
 	}
 	m.wg.Add(1)
@@ -97,9 +97,9 @@ func (m *MockDaemon) On(method string, h Handler) {
 }
 
 // OnRunAgent is a typed shortcut.
-func (m *MockDaemon) OnRunAgent(fn func(req *daemon.RunAgentRequest) (*daemon.RunAgentResult, *daemon.WireError)) {
-	m.On(daemon.MethodRunAgent, func(env *daemon.RequestEnvelope) *daemon.ResponseEnvelope {
-		var r daemon.RunAgentRequest
+func (m *MockDaemon) OnRunAgent(fn func(req *client.RunAgentRequest) (*client.RunAgentResult, *client.WireError)) {
+	m.On(client.MethodRunAgent, func(env *client.RequestEnvelope) *client.ResponseEnvelope {
+		var r client.RunAgentRequest
 		_ = json.Unmarshal(env.Params, &r)
 		out, werr := fn(&r)
 		return wrap(out, werr)
@@ -107,17 +107,17 @@ func (m *MockDaemon) OnRunAgent(fn func(req *daemon.RunAgentRequest) (*daemon.Ru
 }
 
 // OnList is a typed shortcut.
-func (m *MockDaemon) OnList(fn func() (*daemon.ListAgentsResult, *daemon.WireError)) {
-	m.On(daemon.MethodListAgents, func(_ *daemon.RequestEnvelope) *daemon.ResponseEnvelope {
+func (m *MockDaemon) OnList(fn func() (*client.ListAgentsResult, *client.WireError)) {
+	m.On(client.MethodListAgents, func(_ *client.RequestEnvelope) *client.ResponseEnvelope {
 		out, werr := fn()
 		return wrap(out, werr)
 	})
 }
 
 // OnStop is a typed shortcut.
-func (m *MockDaemon) OnStop(fn func(req *daemon.StopAgentRequest) (*daemon.StopAgentResult, *daemon.WireError)) {
-	m.On(daemon.MethodStopAgent, func(env *daemon.RequestEnvelope) *daemon.ResponseEnvelope {
-		var r daemon.StopAgentRequest
+func (m *MockDaemon) OnStop(fn func(req *client.StopAgentRequest) (*client.StopAgentResult, *client.WireError)) {
+	m.On(client.MethodStopAgent, func(env *client.RequestEnvelope) *client.ResponseEnvelope {
+		var r client.StopAgentRequest
 		_ = json.Unmarshal(env.Params, &r)
 		out, werr := fn(&r)
 		return wrap(out, werr)
@@ -125,9 +125,9 @@ func (m *MockDaemon) OnStop(fn func(req *daemon.StopAgentRequest) (*daemon.StopA
 }
 
 // OnLogs is a typed shortcut.
-func (m *MockDaemon) OnLogs(fn func(req *daemon.AgentLogsRequest) (*daemon.AgentLogsResult, *daemon.WireError)) {
-	m.On(daemon.MethodAgentLogs, func(env *daemon.RequestEnvelope) *daemon.ResponseEnvelope {
-		var r daemon.AgentLogsRequest
+func (m *MockDaemon) OnLogs(fn func(req *client.AgentLogsRequest) (*client.AgentLogsResult, *client.WireError)) {
+	m.On(client.MethodAgentLogs, func(env *client.RequestEnvelope) *client.ResponseEnvelope {
+		var r client.AgentLogsRequest
 		_ = json.Unmarshal(env.Params, &r)
 		out, werr := fn(&r)
 		return wrap(out, werr)
@@ -135,24 +135,24 @@ func (m *MockDaemon) OnLogs(fn func(req *daemon.AgentLogsRequest) (*daemon.Agent
 }
 
 // OnStatus is a typed shortcut.
-func (m *MockDaemon) OnStatus(fn func() (*daemon.DaemonStatusResult, *daemon.WireError)) {
-	m.On(daemon.MethodDaemonStatus, func(_ *daemon.RequestEnvelope) *daemon.ResponseEnvelope {
+func (m *MockDaemon) OnStatus(fn func() (*client.DaemonStatusResult, *client.WireError)) {
+	m.On(client.MethodDaemonStatus, func(_ *client.RequestEnvelope) *client.ResponseEnvelope {
 		out, werr := fn()
 		return wrap(out, werr)
 	})
 }
 
 // OnIngest is a typed shortcut.
-func (m *MockDaemon) OnIngest(fn func(req *daemon.IngestEventRequest) *daemon.WireError) {
-	m.On(daemon.MethodIngestEvent, func(env *daemon.RequestEnvelope) *daemon.ResponseEnvelope {
-		var r daemon.IngestEventRequest
+func (m *MockDaemon) OnIngest(fn func(req *client.IngestEventRequest) *client.WireError) {
+	m.On(client.MethodIngestEvent, func(env *client.RequestEnvelope) *client.ResponseEnvelope {
+		var r client.IngestEventRequest
 		_ = json.Unmarshal(env.Params, &r)
 		werr := fn(&r)
 		if werr != nil {
-			return &daemon.ResponseEnvelope{Ok: false, Error: werr}
+			return &client.ResponseEnvelope{Ok: false, Error: werr}
 		}
 		raw, _ := json.Marshal(struct{}{})
-		return &daemon.ResponseEnvelope{Ok: true, Result: raw}
+		return &client.ResponseEnvelope{Ok: true, Result: raw}
 	})
 }
 
@@ -167,9 +167,9 @@ func (m *MockDaemon) OnStreamEvents(fn StreamHandler) {
 
 // PushEvent emits a single event frame to every active streaming subscriber.
 // Returns true if at least one subscriber received the frame.
-func (m *MockDaemon) PushEvent(ev daemon.Event) bool {
+func (m *MockDaemon) PushEvent(ev client.Event) bool {
 	m.mu.Lock()
-	sinks := make([]chan daemon.Event, 0, len(m.streamSinks))
+	sinks := make([]chan client.Event, 0, len(m.streamSinks))
 	for _, ch := range m.streamSinks {
 		sinks = append(sinks, ch)
 	}
@@ -230,18 +230,18 @@ func (m *MockDaemon) handleConn(conn *net.UnixConn) {
 	defer m.wg.Done()
 	defer conn.Close()
 
-	body, err := daemon.ReadFrame(conn)
+	body, err := client.ReadFrame(conn)
 	if err != nil {
 		return
 	}
-	var env daemon.RequestEnvelope
+	var env client.RequestEnvelope
 	if err := json.Unmarshal(body, &env); err != nil {
-		_ = writeErr(conn, daemon.CodeInternal, "decode: "+err.Error())
+		_ = writeErr(conn, client.CodeInternal, "decode: "+err.Error())
 		return
 	}
 	m.recordCall(env.Method, env.Params)
 
-	if env.Method == daemon.MethodStreamEvents {
+	if env.Method == client.MethodStreamEvents {
 		m.handleStream(conn, &env)
 		return
 	}
@@ -250,7 +250,7 @@ func (m *MockDaemon) handleConn(conn *net.UnixConn) {
 	h := m.handlers[env.Method]
 	m.mu.Unlock()
 	if h == nil {
-		_ = writeErr(conn, daemon.CodeInternal, fmt.Sprintf("no handler for %q", env.Method))
+		_ = writeErr(conn, client.CodeInternal, fmt.Sprintf("no handler for %q", env.Method))
 		return
 	}
 	resp := h(&env)
@@ -259,18 +259,18 @@ func (m *MockDaemon) handleConn(conn *net.UnixConn) {
 	}
 	payload, err := json.Marshal(resp)
 	if err != nil {
-		_ = writeErr(conn, daemon.CodeInternal, "encode: "+err.Error())
+		_ = writeErr(conn, client.CodeInternal, "encode: "+err.Error())
 		return
 	}
-	_ = daemon.WriteFrame(conn, payload)
+	_ = client.WriteFrame(conn, payload)
 }
 
-func (m *MockDaemon) handleStream(conn *net.UnixConn, env *daemon.RequestEnvelope) {
+func (m *MockDaemon) handleStream(conn *net.UnixConn, env *client.RequestEnvelope) {
 	m.mu.Lock()
 	fn := m.streamFn
 	m.mu.Unlock()
 
-	sink := make(chan daemon.Event, 64)
+	sink := make(chan client.Event, 64)
 	m.mu.Lock()
 	m.streamSinks[conn] = sink
 	m.mu.Unlock()
@@ -282,7 +282,7 @@ func (m *MockDaemon) handleStream(conn *net.UnixConn, env *daemon.RequestEnvelop
 		if fn == nil {
 			return
 		}
-		var r daemon.StreamEventsRequest
+		var r client.StreamEventsRequest
 		_ = json.Unmarshal(env.Params, &r)
 		fn(&r, sink)
 	}()
@@ -331,13 +331,13 @@ done:
 	m.mu.Unlock()
 }
 
-func writeStreamFrame(conn *net.UnixConn, ev daemon.Event) bool {
-	frame := daemon.StreamEventsFrame{Event: ev}
+func writeStreamFrame(conn *net.UnixConn, ev client.Event) bool {
+	frame := client.StreamEventsFrame{Event: ev}
 	raw, _ := json.Marshal(frame)
-	resp := &daemon.ResponseEnvelope{Ok: true, Result: raw}
+	resp := &client.ResponseEnvelope{Ok: true, Result: raw}
 	payload, _ := json.Marshal(resp)
 	_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
-	return daemon.WriteFrame(conn, payload) == nil
+	return client.WriteFrame(conn, payload) == nil
 }
 
 func (m *MockDaemon) recordCall(method string, params json.RawMessage) {
@@ -349,25 +349,25 @@ func (m *MockDaemon) recordCall(method string, params json.RawMessage) {
 }
 
 func writeErr(w net.Conn, code, msg string) error {
-	resp := &daemon.ResponseEnvelope{Ok: false, Error: &daemon.WireError{Code: code, Message: msg}}
+	resp := &client.ResponseEnvelope{Ok: false, Error: &client.WireError{Code: code, Message: msg}}
 	payload, err := json.Marshal(resp)
 	if err != nil {
 		return err
 	}
-	return daemon.WriteFrame(w, payload)
+	return client.WriteFrame(w, payload)
 }
 
-func wrap(result any, werr *daemon.WireError) *daemon.ResponseEnvelope {
+func wrap(result any, werr *client.WireError) *client.ResponseEnvelope {
 	if werr != nil {
-		return &daemon.ResponseEnvelope{Ok: false, Error: werr}
+		return &client.ResponseEnvelope{Ok: false, Error: werr}
 	}
 	if result == nil {
 		raw, _ := json.Marshal(struct{}{})
-		return &daemon.ResponseEnvelope{Ok: true, Result: raw}
+		return &client.ResponseEnvelope{Ok: true, Result: raw}
 	}
 	raw, err := json.Marshal(result)
 	if err != nil {
-		return &daemon.ResponseEnvelope{Ok: false, Error: &daemon.WireError{Code: daemon.CodeInternal, Message: err.Error()}}
+		return &client.ResponseEnvelope{Ok: false, Error: &client.WireError{Code: client.CodeInternal, Message: err.Error()}}
 	}
-	return &daemon.ResponseEnvelope{Ok: true, Result: raw}
+	return &client.ResponseEnvelope{Ok: true, Result: raw}
 }

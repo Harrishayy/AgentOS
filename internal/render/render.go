@@ -14,7 +14,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/agent-sandbox/cli/internal/daemon"
+	"github.com/agent-sandbox/runtime/internal/client"
 )
 
 // JSON marshals v as one line of JSON to w followed by a newline. Used by all
@@ -29,7 +29,7 @@ func JSON(w io.Writer, v any) error {
 //
 //	Started agent-x  pid=4242  cgroup=/sys/fs/cgroup/agent/agent-x
 //	policy: hosts:1 paths:0 timeout:0
-func HumanRunResult(w io.Writer, r *daemon.RunAgentResult) {
+func HumanRunResult(w io.Writer, r *client.RunAgentResult) {
 	fmt.Fprintf(w, "Started %s  pid=%d  cgroup=%s\n", r.Name, r.PID, r.CgroupPath)
 	if r.PolicySummary != "" {
 		fmt.Fprintf(w, "policy: %s\n", r.PolicySummary)
@@ -37,7 +37,7 @@ func HumanRunResult(w io.Writer, r *daemon.RunAgentResult) {
 }
 
 // HumanStopResult prints the summary used by `agentctl stop`.
-func HumanStopResult(w io.Writer, r *daemon.StopAgentResult) {
+func HumanStopResult(w io.Writer, r *client.StopAgentResult) {
 	dur := time.Duration(r.DurationNS).Round(time.Millisecond)
 	fmt.Fprintf(w, "Stopped %s  signal=%s  exit=%d  in=%s\n", r.Name, r.Signal, r.ExitCode, dur)
 }
@@ -47,7 +47,7 @@ func HumanStopResult(w io.Writer, r *daemon.StopAgentResult) {
 //	NAME      ID      STATUS   PID    UPTIME    POLICY
 //	agent-x   01H8X0  running  4242   3m12s     hosts:1 paths:0 timeout:0
 //	gone      01F00B  exited   -      -         hosts:0 paths:1 timeout:30s   exit=0
-func HumanList(w io.Writer, agents []daemon.AgentInfo) {
+func HumanList(w io.Writer, agents []client.AgentInfo) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	defer tw.Flush()
 	fmt.Fprintln(tw, "NAME\tID\tSTATUS\tPID\tUPTIME\tPOLICY")
@@ -70,7 +70,7 @@ func HumanList(w io.Writer, agents []daemon.AgentInfo) {
 }
 
 // HumanDaemonStatus prints `agentctl daemon status`.
-func HumanDaemonStatus(w io.Writer, s *daemon.DaemonStatusResult) {
+func HumanDaemonStatus(w io.Writer, s *client.DaemonStatusResult) {
 	uptime := compactDuration(time.Duration(s.UptimeNS))
 	fmt.Fprintf(w, "protocol: %s\nbuild: %s\nuptime: %s\nagents: %d\n",
 		s.ProtocolVersion, s.Build, uptime, s.AgentsRunning)
