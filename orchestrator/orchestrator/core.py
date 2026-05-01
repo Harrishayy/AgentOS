@@ -1,6 +1,7 @@
 from __future__ import annotations
 import threading
 import time
+import uuid
 from pathlib import Path
 
 from .daemon import DaemonClient, SOCKET_PATH
@@ -30,18 +31,34 @@ class Orchestrator:
     def launch(self, manifest_path: str | Path) -> AgentProcess:
         return self.launch_direct(load_manifest(manifest_path))
 
-    def launch_direct(self, manifest: AgentManifest) -> AgentProcess:
+    def launch_direct(self, manifest: AgentManifest, *, scenario_id: str | None = None) -> AgentProcess:
         with self._lock:
             existing = self._agents.get(manifest.name)
             if existing and existing.is_alive():
                 raise RuntimeError(f"Agent '{manifest.name}' is already running")
-            agent = AgentProcess(manifest, self._streamer, self._daemon)
+            agent = AgentProcess(manifest, self._streamer, self._daemon, scenario_id=scenario_id)
             self._agents[manifest.name] = agent
 
         agent.start()
         id_info = f"agent_id={agent.agent_id}" if agent.agent_id else f"pid={agent.pid}"
         print(f"[orchestrator] launched '{manifest.name}' {id_info}", flush=True)
         return agent
+
+    def launch_many(
+        self,
+        manifests: list[AgentManifest | str | Path],
+        *,
+        scenario_id: str | None = None,
+        stagger_seconds: float = 0.0,
+    ) -> tuple[str, list[AgentProcess]]:
+        scenario = scenario_id or self._build_scenario_id()
+        launched: list[AgentProcess] = []
+        for item in manifests:
+            manifest = load_manifest(item) if isinstance(item, (str, Path)) else item
+            launched.append(self.launch_direct(manifest, scenario_id=scenario))
+            if stagger_seconds > 0:
+                time.sleep(stagger_seconds)
+        return scenario, launched
 
     def stop(self, name: str):
         with self._lock:
@@ -100,3 +117,6 @@ class Orchestrator:
                         f"(attempt {agent._restart_count}/{self._max_restarts})"
                     )
                     agent.start()
+
+    def _build_scenario_id(self) -> str:
+        return f"scn_{uuid.uuid4().hex[:12]}"

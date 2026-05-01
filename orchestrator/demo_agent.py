@@ -47,8 +47,23 @@ def fetch_url(url: str) -> str:
     print(f"[TOOL] fetch_url called with: {url}")
     try:
         response = requests.get(url, timeout=10)
-        return response.text[:2000]
+        body = response.text[:2000]
+        print(f"[RESULT] " + json.dumps({
+            "tool": "fetch_url",
+            "ok": True,
+            "url": url,
+            "status_code": response.status_code,
+            "chars": len(body),
+            "preview": body[:120],
+        }, separators=(",", ":")), flush=True)
+        return body
     except Exception as e:
+        print(f"[RESULT] " + json.dumps({
+            "tool": "fetch_url",
+            "ok": False,
+            "url": url,
+            "error": str(e),
+        }, separators=(",", ":")), flush=True)
         return f"Error fetching URL: {e}"
 
 
