@@ -34,6 +34,13 @@ const viewers = new Set();
 
 let nextClientId = 1;
 
+const recentEventsBuffer = [];
+const BUFFER_MAX = 20;
+
+function getRecentEvents() {
+  return recentEventsBuffer.slice();
+}
+
 function ts() {
   return new Date().toISOString();
 }
@@ -53,6 +60,16 @@ function describe(client) {
 }
 
 function broadcastToViewers(rawJson, fromClient) {
+  try {
+    const parsed = JSON.parse(rawJson);
+    if (parsed && typeof parsed === 'object') {
+      recentEventsBuffer.push(parsed);
+      if (recentEventsBuffer.length > BUFFER_MAX) recentEventsBuffer.shift();
+    }
+  } catch {
+    // malformed JSON — skip buffering, still relay
+  }
+
   if (viewers.size === 0) return;
   let delivered = 0;
   for (const viewer of viewers) {
@@ -61,7 +78,7 @@ function broadcastToViewers(rawJson, fromClient) {
       delivered += 1;
     }
   }
-  log(`relayed event from ${describe(fromClient)} → ${delivered} viewer(s)`);
+  if (fromClient) log(`relayed event from ${describe(fromClient)} → ${delivered} viewer(s)`);
 }
 
 function handleHandshake(client, msg) {
@@ -351,6 +368,9 @@ function startMockEmitter() {
 }
 
 if (MOCK_ENABLED) startMockEmitter();
+
+const { startAnalyser } = require('./analyser');
+startAnalyser(getRecentEvents, (rawJson) => broadcastToViewers(rawJson, null));
 
 function shutdown(signal) {
   log(`received ${signal}, closing server...`);
