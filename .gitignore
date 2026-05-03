@@ -58,3 +58,4 @@ vendor/tetragon/
 # --- Misc binaries that have snuck in ------------------------------
 *.dmg
 .DS_Store
+context.md
