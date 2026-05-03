@@ -5,6 +5,7 @@ import AgentTabs from './components/AgentTabs.jsx';
 import StatsRow from './components/StatsRow.jsx';
 import LLMPanel from './components/LLMPanel.jsx';
 import KernelPanel from './components/KernelPanel.jsx';
+import SecurityPanel from './components/SecurityPanel.jsx';
 
 const WS_URL = 'ws://localhost:8765';
 const RECONNECT_DELAY_MS = 3000;
@@ -53,6 +54,8 @@ export default function App() {
   const [injectionAlert, setInjectionAlert] = useState(null);
   const [injectionTargets, setInjectionTargets] = useState(() => new Set());
   const [blockedPulseKey, setBlockedPulseKey] = useState(0);
+  const [latestAnalysis, setLatestAnalysis] = useState(null);
+  const [lastAnalysisTs, setLastAnalysisTs] = useState(null);
 
   const socketRef = useRef(null);
   const reconnectTimerRef = useRef(null);
@@ -101,6 +104,9 @@ export default function App() {
           setLlmEvents((prev) => [...prev, stamped].slice(-MAX_EVENTS));
         } else if (KERNEL_TYPES.has(stamped.type)) {
           setKernelEvents((prev) => [...prev, stamped].slice(-MAX_EVENTS));
+        } else if (stamped.type === 'security_analysis') {
+          setLatestAnalysis(stamped.data);
+          setLastAnalysisTs(stamped.ts);
         } else {
           console.warn('viewer: unknown event type', stamped.type);
         }
@@ -243,6 +249,7 @@ export default function App() {
         />
         <KernelPanel events={filteredKernel} />
       </div>
+      <SecurityPanel analysis={latestAnalysis} lastTs={lastAnalysisTs} />
     </div>
   );
 }
