@@ -2,7 +2,7 @@
 
 .app {
   display: grid;
-  grid-template-rows: auto auto auto 1fr auto;
+  grid-template-rows: auto auto auto auto 1fr auto;
   height: 100vh;
   max-width: 1600px;
   margin: 0 auto;

@@ -6,12 +6,17 @@ import StatsRow from './components/StatsRow.jsx';
 import LLMPanel from './components/LLMPanel.jsx';
 import KernelPanel from './components/KernelPanel.jsx';
 import SecurityPanel from './components/SecurityPanel.jsx';
+import WorkflowGraph from './components/WorkflowGraph.jsx';
+import './components/WorkflowGraph.css';
 
 const WS_URL = 'ws://localhost:8765';
 const RECONNECT_DELAY_MS = 3000;
 const MAX_EVENTS = 500;
 
-const LLM_TYPES = new Set(['stdout', 'tool_call', 'stopped', 'crashed']);
+const LLM_TYPES = new Set([
+  'stdout', 'tool_call', 'stopped', 'crashed',
+  'session_start', 'user_input', 'tool_result', 'agent_output',
+]);
 const KERNEL_TYPES = new Set(['connect_attempt', 'connect_allowed', 'connect_blocked']);
 
 // Banner reveal is delayed slightly after the kernel row flashes so the eye
@@ -56,6 +61,7 @@ export default function App() {
   const [blockedPulseKey, setBlockedPulseKey] = useState(0);
   const [latestAnalysis, setLatestAnalysis] = useState(null);
   const [lastAnalysisTs, setLastAnalysisTs] = useState(null);
+  const [activeTab, setActiveTab] = useState('events');
 
   const socketRef = useRef(null);
   const reconnectTimerRef = useRef(null);
@@ -240,15 +246,23 @@ export default function App() {
       <Header wsStatus={wsStatus} />
       <AgentTabs agents={agents} activeAgent={activeAgent} onSelectAgent={setActiveAgent} />
       <StatsRow stats={stats} blockedPulseKey={blockedPulseKey} />
-      <div className="app__panels">
-        <LLMPanel
-          events={filteredLlm}
-          alert={injectionAlert}
-          injectionTargets={injectionTargets}
-          onDismissAlert={dismissAlert}
-        />
-        <KernelPanel events={filteredKernel} />
+      <div className="app__tabbar">
+        <button className={activeTab === 'events' ? 'active' : ''} onClick={() => setActiveTab('events')}>Events</button>
+        <button className={activeTab === 'workflow' ? 'active' : ''} onClick={() => setActiveTab('workflow')}>Workflow</button>
       </div>
+      {activeTab === 'events' ? (
+        <div className="app__panels">
+          <LLMPanel
+            events={filteredLlm}
+            alert={injectionAlert}
+            injectionTargets={injectionTargets}
+            onDismissAlert={dismissAlert}
+          />
+          <KernelPanel events={filteredKernel} />
+        </div>
+      ) : (
+        <WorkflowGraph llmEvents={filteredLlm} kernelEvents={filteredKernel} />
+      )}
       <SecurityPanel analysis={latestAnalysis} lastTs={lastAnalysisTs} />
     </div>
   );
