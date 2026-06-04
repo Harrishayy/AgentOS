@@ -1,4 +1,4 @@
-# Agent Sandbox Runtime
+# Cereberus (Open Source Initiative with Cisco) - Agent Sandbox Runtime
 
 **A Linux-only runtime that stops prompt-injected AI agents from doing damage.**
 The policy lives in the kernel, not in the agent — so even an agent
