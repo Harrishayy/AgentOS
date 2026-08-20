@@ -1,4 +1,0 @@
-# Completion script for bash is non-empty.
-
-agentctl completion bash
-stdout '__start_agentctl'

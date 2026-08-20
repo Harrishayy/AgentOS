@@ -78,7 +78,9 @@ int BPF_PROG(asb_bprm_check, struct linux_binprm *bprm, int ret)
         struct exec_event e;
     } *evt = bpf_ringbuf_reserve(&events, sizeof(*evt), 0);
     if (!evt)
-        return 0;
+        // The slot is our scratch for the binary path; without it we can't
+        // check the allowlist. Fail closed: deny the exec in enforce mode.
+        return pol->mode ? -1 : 0;
     // Zero the slot before any writes — bpf_probe_read_kernel_str leaves
     // the tail of evt->e.filename uninitialized if the source is shorter
     // than MAX_PATH, so prior ringbuf contents would otherwise leak.

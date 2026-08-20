@@ -25,7 +25,12 @@ PREFIX ?= /usr/local
 BIN_DIR := bin
 
 GO_FLAGS ?=
-GO_BUILD := go build $(GO_FLAGS)
+# CGO_ENABLED=0: the daemon calls syscall.AllThreadsSyscall to clear the
+# ambient capability set on every OS thread (so spawned agents inherit no
+# capabilities). That call returns ENOTSUP if the binary uses cgo, because it
+# cannot control C-created threads. The tree is cgo-free; pin it so it stays
+# that way and the privilege drop can never silently no-op.
+GO_BUILD := CGO_ENABLED=0 go build $(GO_FLAGS)
 
 .PHONY: all bpf agentd agentctl test-client \
         test integration e2e demo \

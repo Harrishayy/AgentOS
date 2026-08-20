@@ -11,10 +11,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func authorizeIngest(conn net.Conn) error {
+// authorizePeer rejects any caller whose uid differs from the daemon's.
+// Guards every mutating method, not just IngestEvent: RunAgent can launch
+// an arbitrarily-permissive agent, so it needs at least the same check.
+func authorizePeer(conn net.Conn) error {
 	unixConn, ok := conn.(*net.UnixConn)
 	if !ok {
-		return fmt.Errorf("%w: ingest requires a unix socket peer", ErrPermissionDeniedErr)
+		return fmt.Errorf("%w: this method requires a unix socket peer", ErrPermissionDeniedErr)
 	}
 	raw, err := unixConn.SyscallConn()
 	if err != nil {
@@ -44,5 +47,5 @@ func authorizeIngest(conn net.Conn) error {
 	if cred == nil {
 		return fmt.Errorf("%w: missing peer credentials", ErrPermissionDeniedErr)
 	}
-	return fmt.Errorf("%w: peer uid %d is not authorized to ingest events", ErrPermissionDeniedErr, cred.Uid)
+	return fmt.Errorf("%w: peer uid %d is not authorized", ErrPermissionDeniedErr, cred.Uid)
 }

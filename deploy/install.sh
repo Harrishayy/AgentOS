@@ -9,6 +9,8 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "${SCRIPT_DIR}/.." && pwd )"
 
 USER_NAME="agent-sandbox"
+# Agents run as this, NOT as USER_NAME. See ensure_agent_user().
+AGENT_USER_NAME="agent-sandbox-run"
 GROUP_NAME="agent-sandbox"
 INSTALL_BIN_DIR="/usr/local/bin"
 DAEMON_BIN_SRC="${REPO_ROOT}/bin/agent-sandbox-daemon"
@@ -51,6 +53,22 @@ ensure_user() {
   # --system: low UID, no aging; --no-create-home: daemon never reads $HOME;
   # nologin shell because nobody should `su - agent-sandbox`.
   useradd --system --no-create-home --shell /usr/sbin/nologin "${USER_NAME}"
+}
+
+ensure_agent_user() {
+  step 2b "ensuring ${AGENT_USER_NAME} system user exists"
+  if id "${AGENT_USER_NAME}" >/dev/null 2>&1; then
+    echo "    user already exists; skipping"
+    return
+  fi
+  # Agents run as a SEPARATE unprivileged account from the daemon. This is a
+  # security boundary, not tidiness: the daemon's ambient capabilities
+  # (CAP_BPF, CAP_SYS_ADMIN) survive execve, and both the pinned BPF maps
+  # (/sys/fs/bpf/agent-sandbox, 0700) and the IPC socket (0600) are owned by
+  # ${USER_NAME}. An agent sharing that uid could rewrite its own policy or
+  # ask the daemon over IPC to launch an unrestricted agent. A distinct uid
+  # is what gives those file modes teeth.
+  useradd --system --no-create-home --shell /usr/sbin/nologin "${AGENT_USER_NAME}"
 }
 
 install_binaries() {
@@ -117,6 +135,7 @@ main() {
   require_root
   check_binaries_exist
   ensure_user
+  ensure_agent_user
   install_binaries
   ensure_dirs
   ensure_bpffs

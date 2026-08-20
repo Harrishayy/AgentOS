@@ -4,6 +4,6 @@ package ipc
 
 import "net"
 
-func authorizeIngest(net.Conn) error {
+func authorizePeer(net.Conn) error {
 	return nil
 }

@@ -38,8 +38,14 @@ int BPF_PROG(asb_file_open, struct file *file, int ret)
         struct event_hdr  hdr;
         struct file_event f;
     } *evt = bpf_ringbuf_reserve(&events, sizeof(*evt), 0);
-    if (!evt)
-        return 0;
+    if (!evt) {
+        // The ringbuf slot is our scratch space for bpf_d_path — without it
+        // we cannot resolve the path, so we cannot decide. A decision we
+        // cannot make must FAIL CLOSED: deny in enforce mode. Otherwise an
+        // agent could flood the ringbuf and then open anything while events
+        // are being dropped. (audit mode never blocks, so it still allows.)
+        return pol->mode ? -1 : 0;
+    }
     // bpf_ringbuf_reserve hands back uninitialized memory from a previously
     // used ringbuf slot. Fields we don't write below would otherwise leak
     // those bytes to userspace via the ringbuf reader. Most acutely: if

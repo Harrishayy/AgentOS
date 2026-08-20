@@ -84,16 +84,22 @@ type attachSpec struct {
 	tpName  string
 }
 
-// attachTable enumerates the eight programs the daemon attaches at
+// attachTable enumerates the nine programs the daemon attaches at
 // startup. Names match Mehul's bpf/*.bpf.c SEC()/function names exactly
 // — drift here means "program X missing from object" at startup.
 var attachTable = []attachSpec{
 	{coll: "network", prog: "asb_socket_connect", kind: attachLSM},
-	{coll: "network", prog: "asb_sendto", kind: attachTracepointSyscalls, tpGroup: "syscalls", tpName: "sys_enter_sendto"},
+	// asb_socket_sendmsg replaced the old sys_enter_sendto tracepoint: a
+	// tracepoint can only observe, this LSM hook can deny UDP egress.
+	{coll: "network", prog: "asb_socket_sendmsg", kind: attachLSM},
 	{coll: "file", prog: "asb_file_open", kind: attachLSM},
 	{coll: "creds", prog: "asb_setuid", kind: attachLSM},
 	{coll: "creds", prog: "asb_setgid", kind: attachLSM},
 	{coll: "creds", prog: "asb_capset", kind: attachLSM},
+	// Denies bpf() outright from any managed cgroup. Without this an agent
+	// that shares the daemon's uid can BPF_OBJ_GET the pinned policies map
+	// and rewrite its own rules.
+	{coll: "creds", prog: "asb_bpf", kind: attachLSM},
 	{coll: "exec", prog: "asb_sched_exec", kind: attachTracepointSched, tpGroup: "sched", tpName: "sched_process_exec"},
 	{coll: "exec", prog: "asb_bprm_check", kind: attachLSM},
 }

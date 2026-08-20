@@ -46,18 +46,19 @@ int BPF_PROG(asb_socket_connect, struct socket *sock, struct sockaddr *address, 
 
     __u16 family = BPF_CORE_READ(address, sa_family);
     if (family == AF_INET6) {
-        // v6 connects are NOT enforced in v0 — but they used to be silent.
-        // Emit an audit event so the operator's dashboard reflects reality.
-        // Address bytes are recorded for forensics; verdict is AUDIT to
-        // make it visually distinct from an enforced allow.
+        // The policy allowlist is IPv4-only (struct host_rule.addr_v4), so a
+        // v6 destination can never be on it. Previously this was audit-only,
+        // which meant an agent could bypass the entire host allowlist just by
+        // connecting over IPv6. FAIL CLOSED: deny v6 connects in enforce mode.
         struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)address;
+        int verdict = pol->mode ? VERDICT_DENY : VERDICT_AUDIT;
         struct {
             struct event_hdr  hdr;
             struct net_event  net;
         } *evt6 = bpf_ringbuf_reserve(&events, sizeof(*evt6), 0);
         if (evt6) {
             __builtin_memset(evt6, 0, sizeof(*evt6));
-            fill_hdr(&evt6->hdr, EVT_NET_CONNECT, VERDICT_AUDIT);
+            fill_hdr(&evt6->hdr, EVT_NET_CONNECT, verdict);
             evt6->net.family   = family;
             evt6->net.dport    = bpf_ntohs(BPF_CORE_READ(sin6, sin6_port));
             evt6->net._pad     = 0;
@@ -67,7 +68,8 @@ int BPF_PROG(asb_socket_connect, struct socket *sock, struct sockaddr *address, 
             BPF_CORE_READ_INTO(&evt6->net.daddr_v6, sin6, sin6_addr);
             bpf_ringbuf_submit(evt6, 0);
         }
-        return 0;
+        // Fail closed even if the event could not be reserved.
+        return verdict == VERDICT_DENY ? -1 : 0;
     }
     if (family != AF_INET)
         return 0;   // unix and other families: out of scope for v0
@@ -117,24 +119,47 @@ int BPF_PROG(asb_socket_connect, struct socket *sock, struct sockaddr *address, 
     return 0;
 }
 
-SEC("tp/syscalls/sys_enter_sendto")
-int asb_sendto(struct trace_event_raw_sys_enter *ctx)
+// Datagram egress (UDP). Previously a sys_enter_sendto tracepoint that could
+// only observe — so an agent could exfiltrate over UDP/DNS to any host while
+// the network allowlist (connect-based) looked on. This LSM hook can deny.
+//
+// A CONNECTED datagram socket (msg_namelen == 0) already passed
+// socket_connect, so allow it. An UNCONNECTED datagram with an explicit
+// destination (msg_namelen != 0) carries its target inline; our allowlist is
+// connection-oriented and does not match datagram targets here, so we FAIL
+// CLOSED and deny it in enforce mode. This blocks arbitrary-host UDP,
+// including DNS exfiltration to a resolver of the agent's choosing.
+//
+// Conservative on purpose: we read only the msg_namelen scalar, never
+// dereference msg_name, to stay within a shape the verifier accepts. A future
+// refinement could parse msg_name and allow datagrams to allowlisted hosts.
+SEC("lsm/socket_sendmsg")
+int BPF_PROG(asb_socket_sendmsg, struct socket *sock, struct msghdr *msg, int size, int ret)
 {
+    if (ret != 0)
+        return ret;
+
     __u32 pol_id = lookup_policy_id();
-    if (pol_id == 0)
+    struct policy *pol = lookup_policy(pol_id);
+    if (!pol)
         return 0;
 
-    // Observe-only: emit an audit event so the daemon can correlate
-    // with the policy. Blocking via SIGKILL handled in userspace
-    // (see B-005).
+    int namelen = BPF_CORE_READ(msg, msg_namelen);
+    if (namelen == 0)
+        return 0;   // connected socket: destination already vetted by connect
+
+    int verdict = pol->mode ? VERDICT_DENY : VERDICT_AUDIT;
+
     struct {
         struct event_hdr  hdr;
         struct net_event  net;
     } *evt = bpf_ringbuf_reserve(&events, sizeof(*evt), 0);
-    if (!evt)
-        return 0;
-    __builtin_memset(evt, 0, sizeof(*evt));
-    fill_hdr(&evt->hdr, EVT_NET_SENDTO, VERDICT_AUDIT);
-    bpf_ringbuf_submit(evt, 0);
-    return 0;
+    if (evt) {
+        __builtin_memset(evt, 0, sizeof(*evt));
+        fill_hdr(&evt->hdr, EVT_NET_SENDTO, verdict);
+        bpf_ringbuf_submit(evt, 0);
+    }
+
+    // Fail closed regardless of whether the event could be reserved.
+    return verdict == VERDICT_DENY ? -1 : 0;
 }

@@ -204,6 +204,10 @@ func (s *Server) handleConn(ctx context.Context, c net.Conn) {
 }
 
 func (s *Server) handleRunAgent(ctx context.Context, c net.Conn, req Request, logger *slog.Logger) {
+	if err := authorizePeer(c); err != nil {
+		s.writeErr(c, logger, ErrPermissionDenied, err.Error())
+		return
+	}
 	var p RunAgentParams
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		s.writeErr(c, logger, ErrInvalidManifest, fmt.Sprintf("decode params: %v", err))
@@ -226,6 +230,10 @@ func (s *Server) handleRunAgent(ctx context.Context, c net.Conn, req Request, lo
 }
 
 func (s *Server) handleStopAgent(ctx context.Context, c net.Conn, req Request, logger *slog.Logger) {
+	if err := authorizePeer(c); err != nil {
+		s.writeErr(c, logger, ErrPermissionDenied, err.Error())
+		return
+	}
 	var p StopAgentParams
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		s.writeErr(c, logger, ErrInvalidManifest, fmt.Sprintf("decode params: %v", err))
@@ -308,7 +316,7 @@ func (s *Server) handleStreamEvents(ctx context.Context, c net.Conn, req Request
 }
 
 func (s *Server) handleIngestEvent(ctx context.Context, c net.Conn, req Request, logger *slog.Logger) {
-	if err := authorizeIngest(c); err != nil {
+	if err := authorizePeer(c); err != nil {
 		code := CodeForError(err)
 		logger.Warn("IngestEvent unauthorized", slog.String("code", code), slog.String("err", err.Error()))
 		_ = WriteErr(c, code, err.Error())

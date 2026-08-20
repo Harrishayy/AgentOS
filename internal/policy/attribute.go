@@ -34,6 +34,7 @@ const (
 	KindCredsSetuid  AccessKind = "creds.setuid"
 	KindCredsSetgid  AccessKind = "creds.setgid"
 	KindCredsCapset  AccessKind = "creds.capset"
+	KindBPF          AccessKind = "bpf.denied"
 )
 
 // Pillar groups the access kinds into the four buckets the dashboard
@@ -47,7 +48,7 @@ func Pillar(k AccessKind) string {
 		return "file"
 	case KindExec, KindExecBprm:
 		return "exec"
-	case KindCredsSetuid, KindCredsSetgid, KindCredsCapset:
+	case KindCredsSetuid, KindCredsSetgid, KindCredsCapset, KindBPF:
 		return "cred"
 	default:
 		return "unknown"

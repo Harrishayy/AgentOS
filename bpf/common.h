@@ -21,7 +21,7 @@
 #define MAX_HOSTS       64
 #define MAX_PATHS       64
 #define MAX_BINARIES    32
-#define MAX_POLICIES    64
+#define MAX_POLICIES    32   // matches internal/bpf.MaxPolicies; rebuild+rm pin on change
 #define COMM_LEN        16
 
 // One discriminant per pillar; matches daemon/internal/events/decoder.go
@@ -33,6 +33,7 @@ enum event_kind {
     EVT_CREDS_SETGID  = 5,
     EVT_CREDS_CAPSET  = 6,
     EVT_EXEC          = 7,
+    EVT_BPF           = 8,
 };
 
 enum verdict {
@@ -186,21 +187,33 @@ static __always_inline void fill_hdr(struct event_hdr *h, __u32 kind, __u32 verd
     bpf_get_current_comm(&h->comm, sizeof(h->comm));
 }
 
-// Longest-prefix string match for path/binary rules. The kernel
-// verifier (≥ 5.3) handles bounded for-loops natively, so we don't
-// need `#pragma unroll` here — and unrolling MAX_PATH=256 iterations
-// inside an already-bounded outer loop blows clang's unroll budget
-// (bug B-014).
+// Path-prefix match with a component boundary. The kernel verifier
+// (≥ 5.3) handles bounded for-loops natively, so we don't need
+// `#pragma unroll` — and unrolling MAX_PATH=256 iterations inside an
+// already-bounded outer loop blows clang's unroll budget (bug B-014).
+//
+// SECURITY: a naive "path starts with prefix" test lets a rule for
+// "/tmp/work" also match "/tmp/work-evil/secrets" — a real sandbox
+// escape. So once the prefix is exhausted we require a boundary: either
+// the prefix already ended in '/', or the next path character ends the
+// path or starts a fresh component. "/tmp/work" then matches "/tmp/work"
+// and "/tmp/work/x" but NOT "/tmp/work-evil".
 static __always_inline int has_prefix(const char *path, const char *prefix)
 {
     for (int i = 0; i < MAX_PATH; i++) {
         char p = prefix[i];
-        if (p == 0)
-            return 1;
+        if (p == 0) {
+            if (i == 0)
+                return 1;                    // empty prefix (unused slot)
+            if (prefix[i - 1] == '/')
+                return 1;                    // dir-tree rule like "/tmp/work/"
+            char c = path[i];                // in-bounds: i < MAX_PATH
+            return c == '/' || c == 0;       // component boundary in path
+        }
         if (path[i] != p)
             return 0;
     }
-    return 1;
+    return 1;                                // prefix filled all 256 bytes
 }
 
 #endif // __AGENTSANDBOX_COMMON_H

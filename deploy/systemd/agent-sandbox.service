@@ -16,13 +16,22 @@ Type=simple
 User=agent-sandbox
 Group=agent-sandbox
 
-# Capability set is the brief §2 minimum: BPF for prog/map syscalls,
-# NET_ADMIN for cgroup-attached programs, SYS_ADMIN for cgroup writes
-# and pinning, SYS_RESOURCE to raise RLIMIT_MEMLOCK on older kernels.
-# Bounding == Ambient: ambient is what's actually inheritable to the
-# binary on a non-root exec; bounding caps what could ever be regained.
-AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_SYS_ADMIN CAP_SYS_RESOURCE
-CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_SYS_ADMIN CAP_SYS_RESOURCE
+# Capability set: BPF for prog/map syscalls, NET_ADMIN for cgroup-attached
+# programs, SYS_ADMIN for cgroup writes and pinning, SYS_RESOURCE to raise
+# RLIMIT_MEMLOCK on older kernels.
+#
+# SETUID + SETGID are required to spawn each agent under a DIFFERENT
+# unprivileged uid (agent-sandbox-run) than the daemon's own. Changing a
+# child to an arbitrary uid needs CAP_SETUID (setgid needs CAP_SETGID);
+# without these the child's setuid() fails EPERM and no agent launches.
+# The daemon clears its AMBIENT set at startup so these do NOT flow to the
+# agent — they live in the daemon's effective set only, used once per fork
+# to perform the drop, then wiped from the child by execve.
+#
+# Bounding == Ambient: ambient is what's actually inheritable to the binary
+# on a non-root exec; bounding caps what could ever be regained.
+AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_SETUID CAP_SETGID
+CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_SYS_ADMIN CAP_SYS_RESOURCE CAP_SETUID CAP_SETGID
 
 ExecStart=/usr/local/bin/agent-sandbox-daemon --log-json --log-dir=/var/log/agent-sandbox
 

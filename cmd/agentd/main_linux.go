@@ -24,10 +24,14 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/agent-sandbox/runtime/internal/bpf"
 	"github.com/agent-sandbox/runtime/internal/cgroup"
@@ -47,6 +51,7 @@ func main() {
 	wsAddr := flag.String("ws-addr", "127.0.0.1:7443", "WebSocket bind address (must be loopback)")
 	keepCrashed := flag.Duration("keep-crashed", 60*time.Second, "how long to retain crashed agents before cleanup")
 	bpfDir := flag.String("bpf-dir", bpf.DefaultBPFDir, "directory containing prebuilt .bpf.o objects (network/file/creds/exec) — produced by Mehul's bpf/Makefile")
+	agentUser := flag.String("agent-user", "agent-sandbox-run", "unprivileged account agents are launched as; must exist and must differ from the daemon's own user")
 	flag.Parse()
 
 	// We deliberately don't gate on euid==0. The systemd unit runs us as
@@ -81,6 +86,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := severCapabilityInheritance(log); err != nil {
+		log.Error("severing capability inheritance", "err", err,
+			"fix", "this must succeed; agents would otherwise inherit CAP_BPF/CAP_SYS_ADMIN")
+		os.Exit(1)
+	}
+
+	agentCred, err := resolveAgentCred(*agentUser, log)
+	if err != nil {
+		log.Error("resolving agent user", "err", err,
+			"fix", "create a dedicated unprivileged account (e.g. useradd -r -s /usr/sbin/nologin agent-sandbox-run) or pass --agent-user")
+		os.Exit(1)
+	}
+
 	d := &daemon{
 		startedAt:   time.Now(),
 		log:         log,
@@ -88,6 +106,7 @@ func main() {
 		pipeline:    pipeline,
 		bpfRuntime:  bpfRuntime,
 		keepCrashed: *keepCrashed,
+		agentCred:   agentCred,
 	}
 
 	// Best-effort restart reconciliation: surface orphaned cgroups from a
@@ -201,6 +220,128 @@ type daemon struct {
 	pipeline    *events.Pipeline
 	bpfRuntime  *bpf.Runtime
 	keepCrashed time.Duration
+
+	// agentCred is the identity every spawned agent runs as. It must NOT be
+	// the daemon's own uid: the daemon's ambient capabilities (CAP_BPF,
+	// CAP_SYS_ADMIN) survive execve, and both /sys/fs/bpf/agent-sandbox
+	// (0700) and the IPC socket (0600) are owned by the daemon user. An
+	// agent sharing that uid can therefore rewrite its own policy via
+	// BPF_OBJ_GET, or simply ask the daemon over IPC to launch a second,
+	// unrestricted agent. Running under a separate unprivileged uid is what
+	// makes those file modes mean anything.
+	//
+	// nil only when --agent-user is explicitly set to "" (test/dev escape
+	// hatch); resolveAgentCred logs loudly in that case.
+	agentCred *syscall.Credential
+}
+
+// severCapabilityInheritance makes it impossible for a process this daemon
+// execs to hold capabilities. Called once at startup, before the IPC socket
+// opens, so no agent can be launched ahead of it.
+//
+// Why this is needed at all: the systemd unit grants us CAP_BPF and friends
+// via AmbientCapabilities, because that is the only way a non-root service
+// gets capabilities at exec. Ambient is by definition the set that SURVIVES
+// execve — so without intervention, every agent we spawn inherits them.
+// Changing the agent's uid does not help: the kernel's capability-clearing
+// rules key on transitions to or from uid 0, and we go non-root → non-root.
+//
+// What the kernel does at execve (capabilities(7)):
+//
+//	P'(ambient)     = (file is privileged) ? 0 : P(ambient)
+//	P'(permitted)   = (P(inheritable) & F(inheritable)) | (F(permitted) & P(bounding)) | P'(ambient)
+//	P'(effective)   = F(effective) ? P'(permitted) : P'(ambient)
+//	P'(inheritable) = P(inheritable)   // UNCHANGED — copied to the child
+//	P'(bounding)    = P(bounding)      // UNCHANGED — copied to the child
+//
+// Note inheritable and bounding are copied verbatim; clearing ambient does
+// not empty them. What it does do is zero the two sets that matter: for a
+// target binary with no file capabilities (python3, /bin/sh, …) every F(...)
+// term is 0, so P'(permitted) and P'(effective) both collapse to P'(ambient),
+// which is now 0. The child runs with no usable capabilities.
+//
+// The residual is the (P(inheritable) & F(inheritable)) term: a binary
+// carrying file inheritable caps could hand some back. NoNewPrivileges=true
+// in our unit closes that — under no_new_privs the kernel ignores file
+// capabilities entirely — and it is inherited by every descendant. We also
+// try to empty the bounding set below as defence in depth.
+func severCapabilityInheritance(log *slog.Logger) error {
+	// Capabilities are a PER-THREAD attribute, and Go's runtime is
+	// multi-threaded before main() runs. os/exec forks from whichever OS
+	// thread the calling goroutine happens to be on, so a plain prctl would
+	// harden one thread and leave the fork to inherit from another.
+	// AllThreadsSyscall applies it to every thread in the process.
+	if _, _, errno := syscall.AllThreadsSyscall(syscall.SYS_PRCTL,
+		unix.PR_CAP_AMBIENT, unix.PR_CAP_AMBIENT_CLEAR_ALL, 0); errno != 0 {
+		return fmt.Errorf("clearing ambient set on all threads: %w", errno)
+	}
+	log.Info("ambient capability set cleared on all threads")
+
+	// Emptying the bounding set removes the (F(permitted) & P(bounding))
+	// term as well, so children cannot regain capabilities from file caps
+	// even if NoNewPrivileges were somehow absent. This needs CAP_SETPCAP,
+	// which the unit does NOT currently grant — so treat failure as a
+	// warning, not fatal. Ambient clearing plus NoNewPrivileges is already
+	// sufficient; this is the extra belt.
+	dropped, denied := 0, 0
+	for capN := uintptr(0); capN <= 63; capN++ {
+		_, _, errno := syscall.AllThreadsSyscall(syscall.SYS_PRCTL,
+			unix.PR_CAPBSET_DROP, capN, 0)
+		switch errno {
+		case 0:
+			dropped++
+		case unix.EINVAL:
+			// capN is above CAP_LAST_CAP on this kernel — expected.
+		default:
+			denied++
+		}
+	}
+	if denied > 0 {
+		log.Warn("could not empty the capability bounding set",
+			"dropped", dropped, "refused", denied,
+			"reason", "daemon lacks CAP_SETPCAP",
+			"impact", "none in practice — NoNewPrivileges=true already makes execve ignore file capabilities",
+			"fix", "add CAP_SETPCAP to AmbientCapabilities if you want this belt too")
+	} else {
+		log.Info("capability bounding set emptied", "dropped", dropped)
+	}
+	return nil
+}
+
+// resolveAgentCred looks up the unprivileged account agents run as. Resolved
+// once at startup rather than per-RunAgent so a missing account is a startup
+// failure with a clear message, not a confusing per-agent launch error.
+func resolveAgentCred(name string, log *slog.Logger) (*syscall.Credential, error) {
+	if name == "" {
+		// Deliberately fatal rather than a warning. Running agents as the
+		// daemon's own user re-opens the pinned maps (0700) and the IPC
+		// socket (0600) to them, and makes the SO_PEERCRED check pass. A
+		// flag that can silently restore a sandbox escape is not a flag
+		// worth having.
+		return nil, errors.New("--agent-user must not be empty; agents require a dedicated unprivileged account")
+	}
+	u, err := user.Lookup(name)
+	if err != nil {
+		return nil, fmt.Errorf("looking up --agent-user %q: %w", name, err)
+	}
+	uid, err := strconv.ParseUint(u.Uid, 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("parsing uid for %q: %w", name, err)
+	}
+	gid, err := strconv.ParseUint(u.Gid, 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("parsing gid for %q: %w", name, err)
+	}
+	if uid == 0 {
+		return nil, fmt.Errorf("--agent-user %q resolves to uid 0; agents must not run as root", name)
+	}
+	if uid == uint64(os.Getuid()) {
+		return nil, fmt.Errorf("--agent-user %q resolves to the daemon's own uid (%d); "+
+			"agents must run under a separate account", name, os.Getuid())
+	}
+	log.Info("agents will run as", "user", name, "uid", uid, "gid", gid)
+	//nolint:gosec // uid/gid are bounded by the kernel's 32-bit id space
+	return &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), NoSetGroups: true}, nil
 }
 
 // agentIDBytes is the entropy width for new agent IDs. 8 bytes pushes the
@@ -258,6 +399,9 @@ func (d *daemon) RunAgent(_ context.Context, m ipc.Manifest) (string, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		UseCgroupFD: true,
 		CgroupFD:    cg.FD(),
+		// Drop to an unprivileged account distinct from the daemon's. See
+		// daemon.agentCred for why this is load-bearing rather than hygiene.
+		Credential: d.agentCred,
 	}
 	cmd.Env = mergeEnv(os.Environ(), m.Env)
 	if m.WorkingDir != "" {
@@ -270,6 +414,17 @@ func (d *daemon) RunAgent(_ context.Context, m ipc.Manifest) (string, error) {
 			_ = bh.Cleanup()
 			_ = cg.Destroy()
 			return "", fmt.Errorf("%w: create working_dir %q: %v", ipc.ErrLaunchFailedErr, m.WorkingDir, err)
+		}
+		// The daemon creates the directory as itself, but the agent now runs
+		// as a different uid — without this it would land in a cwd it cannot
+		// write to. Only the leaf is chowned: parents may be shared (/tmp/...)
+		// and handing those to the agent would widen its reach.
+		if d.agentCred != nil {
+			if err := os.Chown(m.WorkingDir, int(d.agentCred.Uid), int(d.agentCred.Gid)); err != nil {
+				_ = bh.Cleanup()
+				_ = cg.Destroy()
+				return "", fmt.Errorf("%w: chown working_dir %q to agent user: %v", ipc.ErrLaunchFailedErr, m.WorkingDir, err)
+			}
 		}
 		cmd.Dir = m.WorkingDir
 	}

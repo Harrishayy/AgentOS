@@ -115,3 +115,39 @@ int BPF_PROG(asb_capset, struct cred *new, const struct cred *old,
         return -1;
     return 0;
 }
+
+SEC("lsm/bpf")
+int BPF_PROG(asb_bpf, int cmd, union bpf_attr *attr, unsigned int size, int ret)
+{
+    if (ret != 0)
+        return ret;
+
+    __u32 pol_id = lookup_policy_id();
+    struct policy *pol = lookup_policy(pol_id);
+    if (!pol)
+        return 0;              // unmanaged → allow (the daemon lands here)
+
+    // A sandboxed agent has no legitimate reason to call bpf() at all:
+    // the only BPF state that concerns it is its own policy, and being
+    // able to reach that is precisely what we're preventing. So this is
+    // an unconditional deny for any managed cgroup, not an allow-list.
+    int verdict = pol->mode ? VERDICT_DENY : VERDICT_AUDIT;
+
+    struct {
+        struct event_hdr   hdr;
+        struct creds_event c;
+    } *evt = bpf_ringbuf_reserve(&events, sizeof(*evt), 0);
+    if (evt) {
+        __builtin_memset(evt, 0, sizeof(*evt));
+        fill_hdr(&evt->hdr, EVT_BPF, verdict);
+        // No dedicated payload for this pillar; reuse creds_event and
+        // record the attempted bpf() command in old_id so the operator
+        // can tell BPF_MAP_UPDATE_ELEM from BPF_PROG_LOAD.
+        evt->c.old_id = (__u32)cmd;
+        bpf_ringbuf_submit(evt, 0);
+    }
+
+    if (verdict == VERDICT_DENY)
+        return -1;   // -EPERM
+    return 0;
+}

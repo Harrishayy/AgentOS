@@ -25,6 +25,7 @@ const (
 	KindCredsSetgid uint32 = 5
 	KindCredsCapset uint32 = 6
 	KindExec        uint32 = 7
+	KindBPF         uint32 = 8
 )
 
 // Verdict values — mirror enum verdict in common.h.reference.
@@ -160,7 +161,7 @@ func decode(buf []byte) (Event, error) {
 		ev.Net = decodeNet(tail)
 	case KindFileOpen:
 		ev.File = decodeFile(tail)
-	case KindCredsSetuid, KindCredsSetgid, KindCredsCapset:
+	case KindCredsSetuid, KindCredsSetgid, KindCredsCapset, KindBPF:
 		ev.Creds = decodeCreds(tail)
 	case KindExec:
 		ev.Exec = decodeExec(tail)
@@ -235,6 +236,8 @@ func kindString(k uint32) string {
 		return "creds.capset"
 	case KindExec:
 		return "exec"
+	case KindBPF:
+		return "bpf.denied"
 	default:
 		return fmt.Sprintf("unknown(%d)", k)
 	}
